@@ -36,6 +36,28 @@ _ts()    { date '+%Y-%m-%d %H:%M:%S'; }
 _date()  { date '+%Y-%m-%d'; }
 _host()  { hostname -s 2>/dev/null || echo "unknown"; }
 
+_resolve_date() {
+    case "$1" in
+        today)     _date ;;
+        yesterday) date -d "yesterday" '+%Y-%m-%d' 2>/dev/null || date -v-1d '+%Y-%m-%d' ;;
+        *)         echo "$1" ;;
+    esac
+}
+
+_delete_entry_n() {
+    local f="$1" n="$2"
+    python3 - "$f" "$n" <<'EOF'
+import sys
+f, n = sys.argv[1], int(sys.argv[2])
+content = open(f).read()
+parts = content.split('\n### ')
+if n < 1 or n >= len(parts):
+    sys.exit("No entry #{} (file has {} entries)".format(n, len(parts)-1))
+del parts[n]
+open(f, 'w').write('\n### '.join(parts))
+EOF
+}
+
 _dayfile() {
     local d="${1:-$(_date)}"
     echo "$DAYDIR/$d.md"
@@ -521,6 +543,10 @@ rlog v2 - Research Journal CLI
   rlog data <path> [memo]     Record data/output location
   rlog note <text...>         Free-form note
 
+  rlog delete last            Delete most recent entry (today)
+  rlog delete day [date]      Delete entire day's log (default: today)
+  rlog delete <date> <n>      Delete entry #n from date (YYYY-MM-DD/today/yesterday)
+
   rlog today                  Show today's entries
   rlog yesterday              Show yesterday's entries
   rlog show [n]               Show recent entries (default 10)
@@ -546,10 +572,70 @@ Examples:
 EOF
 }
 
+cmd_delete() {
+    local sub="${1:-}"
+
+    case "$sub" in
+        last)
+            local f; f=$(_dayfile)
+            [ ! -f "$f" ] && echo "No entries for today." && return 1
+            local count; count=$(grep -c '^### ' "$f" 2>/dev/null || echo 0)
+            [ "$count" -eq 0 ] && echo "No entries to delete." && return 1
+            echo "Last entry:"
+            grep '^### ' "$f" | tail -1
+            local ans; printf "Delete? [y/N]: "; read -r ans
+            ans=$(echo "$ans" | tr '[:upper:]' '[:lower:]')
+            [ "$ans" != "y" ] && echo "Aborted." && return 0
+            _delete_entry_n "$f" "$count"
+            _update_index
+            echo "✓ deleted"
+            ;;
+
+        day)
+            local date; date=$(_resolve_date "${2:-today}")
+            local f; f=$(_dayfile "$date")
+            [ ! -f "$f" ] && echo "No log for $date." && return 1
+            local count; count=$(grep -c '^### ' "$f" 2>/dev/null || echo 0)
+            printf "Delete entire day %s (%s entries)? [y/N]: " "$date" "$count"
+            local ans; read -r ans
+            ans=$(echo "$ans" | tr '[:upper:]' '[:lower:]')
+            [ "$ans" != "y" ] && echo "Aborted." && return 0
+            rm "$f"
+            _update_index
+            echo "✓ deleted $date"
+            ;;
+
+        "")
+            echo "Usage: rlog delete last | rlog delete day [date] | rlog delete <date> <n>"
+            return 1
+            ;;
+
+        *)  # delete <date> <n>
+            local date; date=$(_resolve_date "$sub")
+            local n="${2:-}"
+            if [ -z "$n" ]; then
+                echo "Usage: rlog delete last | rlog delete day [date] | rlog delete <date> <n>"
+                return 1
+            fi
+            local f; f=$(_dayfile "$date")
+            [ ! -f "$f" ] && echo "No log for $date." && return 1
+            echo "Entry #$n from $date:"
+            grep '^### ' "$f" | sed -n "${n}p"
+            local ans; printf "Delete? [y/N]: "; read -r ans
+            ans=$(echo "$ans" | tr '[:upper:]' '[:lower:]')
+            [ "$ans" != "y" ] && echo "Aborted." && return 0
+            _delete_entry_n "$f" "$n"
+            _update_index
+            echo "✓ deleted entry #$n from $date"
+            ;;
+    esac
+}
+
 # ---- Main ----
 
 case "${1:-help}" in
     run)       shift; cmd_run "$@" ;;
+    delete)    shift; cmd_delete "$@" ;;
     exp)       shift; cmd_exp ;;
     env)       shift; cmd_env "$@" ;;
     data)      shift; cmd_data "$@" ;;
