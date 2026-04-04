@@ -1,0 +1,566 @@
+#!/bin/bash
+# ============================================================
+# rlog v2 - Research Journal CLI
+# ============================================================
+#
+# Commands:
+#   rlog run <command...>       Run command & log (auto-detect files)
+#   rlog exp                    Log experiment interactively
+#   rlog env [memo]             Snapshot environment
+#   rlog data <path> [memo]     Record data/output location
+#   rlog note <text...>         Free-form note
+#   rlog today                  Show today's log
+#   rlog yesterday              Show yesterday's log
+#   rlog show [n]               Show last n entries across days
+#   rlog search <keyword>       Search all logs
+#   rlog tags                   List all tags
+#   rlog tag <name>             Show entries with tag
+#   rlog list                   List all log dates
+#   rlog help                   Show help
+#
+# Config:
+#   RLOG_DIR   Log directory (default: ~/research-log)
+#
+# ============================================================
+
+LOGDIR="${RLOG_DIR:-$HOME/research-log}"
+DAYDIR="$LOGDIR/days"
+ENVDIR="$LOGDIR/envs"
+INDEX="$LOGDIR/index.md"
+
+mkdir -p "$DAYDIR" "$ENVDIR"
+
+# ---- Helpers ----
+
+_ts()    { date '+%Y-%m-%d %H:%M:%S'; }
+_date()  { date '+%Y-%m-%d'; }
+_host()  { hostname -s 2>/dev/null || echo "unknown"; }
+
+_dayfile() {
+    local d="${1:-$(_date)}"
+    echo "$DAYDIR/$d.md"
+}
+
+_init_dayfile() {
+    local f
+    f=$(_dayfile)
+    if [ ! -f "$f" ]; then
+        printf '# %s\n\n' "$(_date)" > "$f"
+        _update_index
+    fi
+}
+
+_append() {
+    _init_dayfile
+    printf '%s\n' "$1" >> "$(_dayfile)"
+}
+
+_update_index() {
+    {
+        echo "# Research Log Index"
+        echo ""
+        echo "> Auto-updated by rlog"
+        echo ""
+        # List all day files, newest first
+        for f in $(ls -r "$DAYDIR"/*.md 2>/dev/null); do
+            local base
+            base=$(basename "$f" .md)
+            local count
+            count=$(grep -c '^### ' "$f" 2>/dev/null || echo 0)
+            echo "- **[$base]($f)** ($count entries)"
+        done
+    } > "$INDEX"
+}
+
+# Detect file paths in a command string
+_detect_files() {
+    local cmd="$*"
+    local files_in=""
+    local files_out=""
+    local all_paths=""
+
+    # Extract tokens that look like file paths
+    for token in $cmd; do
+        # Skip flags
+        [[ "$token" == -* ]] && continue
+
+        # Check if token looks like a file path (has extension or slash)
+        if [[ "$token" == */* ]] || [[ "$token" == *.* ]]; then
+            # Resolve to absolute if exists
+            local resolved=""
+            if [ -e "$token" ]; then
+                resolved=$(realpath "$token" 2>/dev/null || echo "$token")
+            else
+                resolved="$token"
+            fi
+            all_paths="$all_paths $resolved"
+        fi
+    done
+
+    # Heuristic: for common tools, classify in/out
+    local tool
+    tool=$(echo "$cmd" | awk '{print $1}' | xargs basename 2>/dev/null || echo "")
+
+    case "$tool" in
+        ffmpeg)
+            # -i <input>, last arg is usually output
+            local prev=""
+            for token in $cmd; do
+                if [ "$prev" = "-i" ]; then
+                    local r
+                    r=$(realpath "$token" 2>/dev/null || echo "$token")
+                    files_in="$files_in $r"
+                fi
+                prev="$token"
+            done
+            # Last path-like token = output
+            local last_path
+            last_path=$(echo "$all_paths" | awk '{print $NF}')
+            if [ -n "$last_path" ]; then
+                files_out="$last_path"
+                # Remove from all_paths to avoid duplication
+                all_paths=$(echo "$all_paths" | sed "s|$last_path||")
+            fi
+            ;;
+        mv|cp)
+            # Last arg = destination
+            local tokens=($all_paths)
+            local len=${#tokens[@]}
+            if [ "$len" -ge 2 ]; then
+                files_out="${tokens[$((len-1))]}"
+                files_in="${tokens[*]:0:$((len-1))}"
+            fi
+            ;;
+        python|python3)
+            # First .py = script, rest are args with files
+            local found_script=0
+            for p in $all_paths; do
+                if [[ "$p" == *.py ]] && [ $found_script -eq 0 ]; then
+                    files_in="$files_in $p"
+                    found_script=1
+                else
+                    # Check common flags in original cmd
+                    if echo "$cmd" | grep -qE "(--output|--out|-o)\s+$(basename "$p")"; then
+                        files_out="$files_out $p"
+                    else
+                        files_in="$files_in $p"
+                    fi
+                fi
+            done
+            ;;
+        *)
+            # Generic: just list all detected paths
+            files_in="$all_paths"
+            ;;
+    esac
+
+    # Trim whitespace
+    files_in=$(echo "$files_in" | xargs 2>/dev/null || true)
+    files_out=$(echo "$files_out" | xargs 2>/dev/null || true)
+
+    echo "IN:$files_in"
+    echo "OUT:$files_out"
+}
+
+# ---- Commands ----
+
+cmd_run() {
+    if [ $# -eq 0 ]; then
+        echo "Usage: rlog run <command...>"
+        return 1
+    fi
+
+    local cmd="$*"
+    local ts
+    ts=$(_ts)
+    local workdir
+    workdir=$(pwd)
+    local host
+    host=$(_host)
+
+    # Detect files before running (input files exist now)
+    local detected
+    detected=$(_detect_files "$cmd")
+    local files_in
+    files_in=$(echo "$detected" | grep '^IN:' | sed 's/^IN://')
+    local files_out_hint
+    files_out_hint=$(echo "$detected" | grep '^OUT:' | sed 's/^OUT://')
+
+    echo "▶ $cmd"
+    echo ""
+
+    # Run and capture
+    local output exit_code
+    output=$(eval "$cmd" 2>&1) || true
+    exit_code=${PIPESTATUS[0]:-$?}
+
+    echo "$output"
+    echo ""
+
+    # Re-detect: check if output files now exist and get sizes
+    local out_info=""
+    if [ -n "$files_out_hint" ]; then
+        for f in $files_out_hint; do
+            if [ -e "$f" ]; then
+                local sz
+                sz=$(ls -lh "$f" 2>/dev/null | awk '{print $5}')
+                out_info="$out_info\n  - \`$f\` ($sz)"
+            else
+                out_info="$out_info\n  - \`$f\` (not created)"
+            fi
+        done
+    fi
+
+    local line_count
+    line_count=$(echo "$output" | wc -l)
+
+    # Prompt user for output logging preference
+    local save_choice
+    printf "Save output to log? [y/n/t] (y=full, n=skip output, t=truncated) [Y]: "
+    read -r save_choice
+    save_choice="${save_choice:-y}"
+    save_choice=$(echo "$save_choice" | tr '[:upper:]' '[:lower:]')
+
+    # Build common entry header
+    local entry=""
+    entry+="### [$ts] cmd \`$(echo "$cmd" | cut -c1-80)\`"$'\n\n'
+    entry+="- **host:** $host"$'\n'
+    entry+="- **dir:** \`$workdir\`"$'\n'
+    entry+="- **cmd:** \`$cmd\`"$'\n'
+    entry+="- **exit:** $exit_code"$'\n'
+
+    if [ -n "$files_in" ]; then
+        entry+="- **input:** \`$files_in\`"$'\n'
+    fi
+    if [ -n "$files_out_hint" ]; then
+        entry+="- **output:**"$'\n'
+        entry+="$(echo -e "$out_info")"$'\n'
+    fi
+
+    entry+=$'\n'
+
+    # Append stdout block based on choice
+    if [ "$save_choice" = "y" ]; then
+        entry+="<details><summary>stdout ($line_count lines)</summary>"$'\n\n'
+        entry+='```'$'\n'
+        entry+="$output"$'\n'
+        entry+='```'$'\n\n'
+        entry+="</details>"$'\n'
+    elif [ "$save_choice" = "t" ]; then
+        local logged_output
+        if [ "$line_count" -gt 60 ]; then
+            logged_output=$(echo "$output" | head -30)
+            logged_output="$logged_output
+... ($line_count lines, truncated) ...
+$(echo "$output" | tail -30)"
+        else
+            logged_output="$output"
+        fi
+        entry+="<details><summary>stdout ($line_count lines, truncated)</summary>"$'\n\n'
+        entry+='```'$'\n'
+        entry+="$logged_output"$'\n'
+        entry+='```'$'\n\n'
+        entry+="</details>"$'\n'
+    fi
+    # n: no stdout block appended
+
+    _append "$entry"
+
+    if [ "$exit_code" -eq 0 ]; then
+        echo "✓ logged (exit $exit_code)"
+    else
+        echo "✗ logged (exit $exit_code)"
+    fi
+}
+
+cmd_exp() {
+    local ts
+    ts=$(_ts)
+
+    echo "=== Log Experiment ==="
+
+    read -rp "Model/Tool (e.g. SAM2, YOLO, ffmpeg): " model
+    read -rp "Method/Config (e.g. chunk_size=100, ema_cross): " method
+    read -rp "Input data (path or description): " input_data
+    read -rp "Output data (path or description): " output_data
+    read -rp "Result/Observation: " result
+    read -rp "Tags (space-separated, e.g. #sam2 #gaze): " tags
+    read -rp "Extra notes (optional): " notes
+
+    # Check output path size if it exists
+    local out_info="$output_data"
+    if [ -e "$output_data" ]; then
+        local sz
+        sz=$(ls -lh "$output_data" 2>/dev/null | awk '{print $5}')
+        local full
+        full=$(realpath "$output_data" 2>/dev/null || echo "$output_data")
+        out_info="\`$full\` ($sz)"
+    fi
+
+    local entry=""
+    entry+="### [$ts] experiment: $model"$'\n\n'
+    entry+="| | |"$'\n'
+    entry+="|---|---|"$'\n'
+    entry+="| **Model/Tool** | $model |"$'\n'
+    entry+="| **Method/Config** | $method |"$'\n'
+    entry+="| **Input** | $input_data |"$'\n'
+    entry+="| **Output** | $out_info |"$'\n'
+    entry+="| **Result** | $result |"$'\n'
+    entry+="| **Host** | $(_host) |"$'\n'
+    [ -n "$tags" ] && entry+="| **Tags** | $tags |"$'\n'
+    entry+=$'\n'
+    [ -n "$notes" ] && entry+="$notes"$'\n\n'
+
+    _append "$entry"
+    echo "✓ experiment logged"
+}
+
+cmd_env() {
+    local ts
+    ts=$(_ts)
+    local memo="${*:-}"
+    local host
+    host=$(_host)
+    local envname
+    envname=$(basename "${CONDA_DEFAULT_ENV:-${VIRTUAL_ENV:-system}}" 2>/dev/null)
+
+    # Collect env info
+    local py_ver
+    py_ver=$(python3 --version 2>/dev/null || python --version 2>/dev/null || echo "N/A")
+    local conda_env
+    conda_env="${CONDA_DEFAULT_ENV:-N/A}"
+    local venv
+    venv="${VIRTUAL_ENV:-N/A}"
+
+    # GPU info
+    local gpu_info
+    gpu_info=$(nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader 2>/dev/null || echo "N/A")
+
+    # Key packages
+    local key_pkgs
+    key_pkgs=$(pip list 2>/dev/null | grep -iE "^(torch|tensorflow|sam2|numpy|opencv|torchreid|segment.anything|ultralytics|ffmpeg)" || echo "N/A")
+
+    # Save full pip freeze to envs/
+    local freeze_file="$ENVDIR/${_date}_${envname}.txt"
+    pip freeze > "$freeze_file" 2>/dev/null || true
+
+    local entry=""
+    entry+="### [$ts] env snapshot"$'\n\n'
+    entry+="- **host:** $host"$'\n'
+    entry+="- **conda:** $conda_env"$'\n'
+    entry+="- **venv:** $venv"$'\n'
+    entry+="- **python:** $py_ver"$'\n'
+    entry+="- **gpu:** $gpu_info"$'\n'
+    entry+="- **full freeze:** \`$freeze_file\`"$'\n'
+    [ -n "$memo" ] && entry+="- **memo:** $memo"$'\n'
+    entry+=$'\n'
+    entry+="Key packages:"$'\n'
+    entry+='```'$'\n'
+    entry+="$key_pkgs"$'\n'
+    entry+='```'$'\n\n'
+
+    _append "$entry"
+    echo "✓ environment snapshot logged → $freeze_file"
+}
+
+cmd_data() {
+    if [ $# -lt 1 ]; then
+        echo "Usage: rlog data <path> [memo...]"
+        return 1
+    fi
+
+    local filepath="$1"; shift
+    local memo="$*"
+    local ts
+    ts=$(_ts)
+
+    local abs_path
+    abs_path=$(realpath "$filepath" 2>/dev/null || echo "$filepath")
+
+    local info=""
+    if [ -d "$abs_path" ]; then
+        local count
+        count=$(find "$abs_path" -maxdepth 1 -type f | wc -l)
+        local sz
+        sz=$(du -sh "$abs_path" 2>/dev/null | cut -f1)
+        info="dir, $count files, $sz total"
+    elif [ -f "$abs_path" ]; then
+        local sz
+        sz=$(ls -lh "$abs_path" | awk '{print $5}')
+        local ext="${abs_path##*.}"
+        info="$sz, .$ext"
+    else
+        info="(path not found)"
+    fi
+
+    local entry=""
+    entry+="### [$ts] data"$'\n\n'
+    entry+="- **path:** \`$abs_path\`"$'\n'
+    entry+="- **info:** $info"$'\n'
+    [ -n "$memo" ] && entry+="- **memo:** $memo"$'\n'
+    entry+=$'\n'
+
+    _append "$entry"
+    echo "✓ data logged: $abs_path ($info)"
+}
+
+cmd_note() {
+    if [ $# -eq 0 ]; then
+        echo "Usage: rlog note <text...>"
+        return 1
+    fi
+
+    local ts
+    ts=$(_ts)
+    local text="$*"
+
+    local entry=""
+    entry+="### [$ts] note"$'\n\n'
+    entry+="$text"$'\n\n'
+
+    _append "$entry"
+    echo "✓ note logged"
+}
+
+cmd_today() {
+    local f
+    f=$(_dayfile)
+    if [ -f "$f" ]; then
+        cat "$f"
+    else
+        echo "No entries for today ($(_date))."
+    fi
+}
+
+cmd_yesterday() {
+    local d
+    d=$(date -d "yesterday" '+%Y-%m-%d' 2>/dev/null || date -v-1d '+%Y-%m-%d' 2>/dev/null)
+    local f
+    f=$(_dayfile "$d")
+    if [ -f "$f" ]; then
+        cat "$f"
+    else
+        echo "No entries for yesterday ($d)."
+    fi
+}
+
+cmd_show() {
+    local n="${1:-10}"
+    # Collect entries from recent day files
+    local count=0
+    for f in $(ls -r "$DAYDIR"/*.md 2>/dev/null); do
+        if [ $count -ge "$n" ]; then break; fi
+        # Count entries in this file
+        local entries_here
+        entries_here=$(grep -c '^### ' "$f" 2>/dev/null || echo 0)
+        if [ "$entries_here" -gt 0 ]; then
+            echo "━━━ $(basename "$f" .md) ━━━"
+            cat "$f"
+            echo ""
+            count=$((count + entries_here))
+        fi
+    done
+}
+
+cmd_search() {
+    if [ $# -eq 0 ]; then
+        echo "Usage: rlog search <keyword>"
+        return 1
+    fi
+    grep -rl -i "$*" "$DAYDIR" 2>/dev/null | sort -r | while read -r f; do
+        echo "━━━ $(basename "$f" .md) ━━━"
+        grep -i -n -B1 -A4 "$*" "$f"
+        echo ""
+    done
+}
+
+cmd_tags() {
+    echo "All tags used:"
+    grep -roh '#[a-zA-Z0-9_-]\+' "$DAYDIR" 2>/dev/null | sort | uniq -c | sort -rn
+}
+
+cmd_tag() {
+    if [ $# -eq 0 ]; then
+        echo "Usage: rlog tag <tagname>"
+        return 1
+    fi
+    local tag="$1"
+    # Add # if not present
+    [[ "$tag" != \#* ]] && tag="#$tag"
+
+    grep -rl "$tag" "$DAYDIR" 2>/dev/null | sort -r | while read -r f; do
+        echo "━━━ $(basename "$f" .md) ━━━"
+        # Print matching entry blocks
+        awk -v tag="$tag" '
+            /^### / { block=$0; found=0; next }
+            { block=block"\n"$0 }
+            index($0, tag) { found=1 }
+            /^$/ && found { print block"\n"; found=0 }
+        ' "$f"
+    done
+}
+
+cmd_list() {
+    echo "Log dates:"
+    for f in $(ls -r "$DAYDIR"/*.md 2>/dev/null); do
+        local base
+        base=$(basename "$f" .md)
+        local count
+        count=$(grep -c '^### ' "$f" 2>/dev/null || echo 0)
+        echo "  $base  ($count entries)"
+    done
+}
+
+cmd_help() {
+    cat << 'EOF'
+rlog v2 - Research Journal CLI
+
+  rlog run <command...>       Run & log command (auto-detects files)
+  rlog exp                    Log experiment interactively
+  rlog env [memo]             Snapshot conda/pip/GPU info
+  rlog data <path> [memo]     Record data/output location
+  rlog note <text...>         Free-form note
+
+  rlog today                  Show today's entries
+  rlog yesterday              Show yesterday's entries
+  rlog show [n]               Show recent entries (default 10)
+  rlog search <keyword>       Search across all logs
+  rlog tags                   List all tags used
+  rlog tag <name>             Filter by tag
+  rlog list                   List all log dates
+
+Config:
+  RLOG_DIR=~/research-log     Override log directory
+
+Examples:
+  rlog run ffmpeg -i video.mp4 -vn audio.wav
+  rlog run python sam2_pipeline.py --input sess3.mp4 --output masks/
+  rlog run mv results/old.npz results/backup/old.npz
+  rlog exp
+  rlog env "for SAM2 pipeline"
+  rlog data /data/outputs/session3_masks.npz "all frames done"
+  rlog note "OOM fixed by setting offload_video_to_cpu=True #sam2"
+  rlog search SAM2
+  rlog tag sam2
+  rlog today
+EOF
+}
+
+# ---- Main ----
+
+case "${1:-help}" in
+    run)       shift; cmd_run "$@" ;;
+    exp)       shift; cmd_exp ;;
+    env)       shift; cmd_env "$@" ;;
+    data)      shift; cmd_data "$@" ;;
+    note)      shift; cmd_note "$@" ;;
+    today)     cmd_today ;;
+    yesterday) cmd_yesterday ;;
+    show)      shift; cmd_show "$@" ;;
+    search)    shift; cmd_search "$@" ;;
+    tags)      cmd_tags ;;
+    tag)       shift; cmd_tag "$@" ;;
+    list)      cmd_list ;;
+    help|-h|--help) cmd_help ;;
+    *)         echo "Unknown: $1"; cmd_help; exit 1 ;;
+esac

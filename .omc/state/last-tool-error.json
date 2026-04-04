@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"cd /tmp && rm -rf rlog_test && RLOG_DIR=/tmp/rlog_test bash -c 'echo \\\"y\\\" | /Users/chiki/Documents/cli_tools/rlog run echo hello world' 2>&1; echo \\\"---log---\\\"; cat /tmp/rlog_test/days/$...",
+  "error": "Exit code 1\nbash: /Users/chiki/Documents/cli_tools/rlog: Permission denied\n---log---",
+  "timestamp": "2026-04-04T16:07:48.646Z",
+  "retry_count": 2
+}
