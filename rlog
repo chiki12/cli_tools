@@ -26,9 +26,10 @@
 LOGDIR="${RLOG_DIR:-$HOME/research-log}"
 DAYDIR="$LOGDIR/days"
 ENVDIR="$LOGDIR/envs"
+SESSDIR="$LOGDIR/sessions"
 INDEX="$LOGDIR/index.md"
 
-mkdir -p "$DAYDIR" "$ENVDIR"
+mkdir -p "$DAYDIR" "$ENVDIR" "$SESSDIR"
 
 # ---- Helpers ----
 
@@ -58,6 +59,29 @@ open(f, 'w').write('\n### '.join(parts))
 EOF
 }
 
+_get_session() {
+    local tty_id
+    tty_id=$(tty 2>/dev/null | tr '/' '-' | sed 's/^-dev-//' || echo "unknown")
+    local af="/tmp/rlog_attach_${tty_id}"
+    if [ -f "$af" ]; then
+        cat "$af"
+    else
+        echo "others"
+    fi
+}
+
+_ensure_session_header() {
+    local session
+    session=$(_get_session)
+    local f
+    f=$(_dayfile)
+    local last
+    last=$(grep '^## Session:' "$f" 2>/dev/null | tail -1 | sed 's/^## Session: //')
+    if [ "$last" != "$session" ]; then
+        printf '\n## Session: %s\n\n' "$session" >> "$f"
+    fi
+}
+
 _dayfile() {
     local d="${1:-$(_date)}"
     echo "$DAYDIR/$d.md"
@@ -74,6 +98,7 @@ _init_dayfile() {
 
 _append() {
     _init_dayfile
+    _ensure_session_header
     printf '%s\n' "$1" >> "$(_dayfile)"
 }
 
@@ -543,6 +568,12 @@ rlog v2 - Research Journal CLI
   rlog data <path> [memo]     Record data/output location
   rlog note <text...>         Free-form note
 
+  rlog session start <name>   Start or resume a named session
+  rlog session end            Detach from session (session preserved)
+  rlog session delete <name>  Permanently delete a session record
+  rlog session status         Show active session in this terminal
+  rlog session list           List all known sessions
+
   rlog delete last            Delete most recent entry (today)
   rlog delete day [date]      Delete entire day's log (default: today)
   rlog delete <date> <n>      Delete entry #n from date (YYYY-MM-DD/today/yesterday)
@@ -570,6 +601,90 @@ Examples:
   rlog tag sam2
   rlog today
 EOF
+}
+
+cmd_session() {
+    local sub="${1:-status}"
+    local tty_id
+    tty_id=$(tty 2>/dev/null | tr '/' '-' | sed 's/^-dev-//' || echo "unknown")
+    local af="/tmp/rlog_attach_${tty_id}"
+
+    case "$sub" in
+        start)
+            local name="${2:-}"
+            if [ -z "$name" ]; then
+                echo "Usage: rlog session start <name>"
+                return 1
+            fi
+            local sf="$SESSDIR/${name}.session"
+            if [ -f "$sf" ]; then
+                local started; started=$(grep '^started=' "$sf" | cut -d= -f2-)
+                echo "$name" > "$af"
+                echo "✓ resumed session: $name (started $started)"
+            else
+                printf 'name=%s\nstarted=%s\n' "$name" "$(_ts)" > "$sf"
+                echo "$name" > "$af"
+                echo "✓ session started: $name"
+            fi
+            ;;
+
+        end)
+            if [ -f "$af" ]; then
+                local name; name=$(cat "$af")
+                rm "$af"
+                echo "✓ detached from: $name  (resume with: rlog session start \"$name\")"
+            else
+                echo "No active session in this terminal."
+            fi
+            ;;
+
+        delete)
+            local name="${2:-}"
+            if [ -z "$name" ]; then
+                echo "Usage: rlog session delete <name>"
+                return 1
+            fi
+            local sf="$SESSDIR/${name}.session"
+            [ ! -f "$sf" ] && echo "No session: $name" && return 1
+            rm "$sf"
+            if [ -f "$af" ] && [ "$(cat "$af")" = "$name" ]; then
+                rm "$af"
+            fi
+            echo "✓ session deleted: $name"
+            ;;
+
+        status)
+            if [ -f "$af" ]; then
+                local name; name=$(cat "$af")
+                local sf="$SESSDIR/${name}.session"
+                local started; started=$(grep '^started=' "$sf" 2>/dev/null | cut -d= -f2-)
+                echo "Active session: $name (started $started)"
+            else
+                echo "No active session (logging to 'others')"
+            fi
+            ;;
+
+        list)
+            echo "Sessions:"
+            local found=0
+            for sf in "$SESSDIR"/*.session; do
+                [ -f "$sf" ] || continue
+                found=1
+                local sname; sname=$(basename "$sf" .session)
+                local started; started=$(grep '^started=' "$sf" | cut -d= -f2-)
+                local attached=""
+                for xaf in /tmp/rlog_attach_*; do
+                    [ -f "$xaf" ] && [ "$(cat "$xaf" 2>/dev/null)" = "$sname" ] && attached=" [attached]" && break
+                done
+                printf '  %-30s started %s%s\n' "$sname" "$started" "$attached"
+            done
+            [ "$found" -eq 0 ] && echo "  (none)"
+            ;;
+
+        *)
+            echo "Usage: rlog session start <name> | end | delete <name> | status | list"
+            ;;
+    esac
 }
 
 cmd_delete() {
@@ -635,6 +750,7 @@ cmd_delete() {
 
 case "${1:-help}" in
     run)       shift; cmd_run "$@" ;;
+    session)   shift; cmd_session "$@" ;;
     delete)    shift; cmd_delete "$@" ;;
     exp)       shift; cmd_exp ;;
     env)       shift; cmd_env "$@" ;;
