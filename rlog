@@ -59,6 +59,15 @@ open(f, 'w').write('\n### '.join(parts))
 EOF
 }
 
+_preview_entry() {
+    local f="$1" n="$2"
+    awk -v n="$n" 'BEGIN{c=0; p=0; lines=0}
+        /^### / { c++; p=(c==n); lines=0 }
+        p { print; lines++ }
+        p && lines>=6 { exit }
+    ' "$f"
+}
+
 _get_session() {
     local tty_id
     tty_id=$(tty 2>/dev/null | tr '/' '-' | sed 's/^-dev-//' || echo "unknown")
@@ -363,9 +372,50 @@ cmd_exp() {
 }
 
 cmd_env() {
+    local sub="${1:-}"
+
+    case "$sub" in
+        list)
+            echo "Env snapshots:"
+            local found=0
+            for f in $(ls -r "$ENVDIR"/*.txt 2>/dev/null); do
+                found=1
+                local base; base=$(basename "$f")
+                local sz; sz=$(ls -lh "$f" | awk '{print $5}')
+                printf '  %-45s %s\n' "$base" "$sz"
+            done
+            [ "$found" -eq 0 ] && echo "  (none)"
+            return 0
+            ;;
+        delete)
+            local target="${2:-}"
+            if [ -z "$target" ]; then
+                echo "Usage: rlog env delete <filename|last>"
+                return 1
+            fi
+            local file=""
+            if [ "$target" = "last" ]; then
+                file=$(ls -t "$ENVDIR"/*.txt 2>/dev/null | head -1)
+                [ -z "$file" ] && echo "No env snapshots found." && return 1
+            else
+                file="$ENVDIR/$target"
+                [ ! -f "$file" ] && file="$ENVDIR/${target}.txt"
+                [ ! -f "$file" ] && echo "Not found: $target" && return 1
+            fi
+            printf "Delete %s? [y/N]: " "$(basename "$file")"
+            local ans; read -r ans
+            ans=$(echo "$ans" | tr '[:upper:]' '[:lower:]')
+            [ "$ans" != "y" ] && echo "Aborted." && return 0
+            rm "$file"
+            echo "✓ deleted: $(basename "$file")"
+            return 0
+            ;;
+    esac
+
+    # Default: take snapshot (sub is part of memo if not a subcommand)
+    local memo="${*:-}"
     local ts
     ts=$(_ts)
-    local memo="${*:-}"
     local host
     host=$(_host)
     local envname
@@ -388,7 +438,7 @@ cmd_env() {
     key_pkgs=$(pip list 2>/dev/null | grep -iE "^(torch|tensorflow|sam2|numpy|opencv|torchreid|segment.anything|ultralytics|ffmpeg)" || echo "N/A")
 
     # Save full pip freeze to envs/
-    local freeze_file="$ENVDIR/${_date}_${envname}.txt"
+    local freeze_file="$ENVDIR/$(_date)_${envname}.txt"
     pip freeze > "$freeze_file" 2>/dev/null || true
 
     local entry=""
@@ -565,6 +615,8 @@ rlog v2 - Research Journal CLI
   rlog run <command...>       Run & log command (auto-detects files)
   rlog exp                    Log experiment interactively
   rlog env [memo]             Snapshot conda/pip/GPU info
+  rlog env list               List saved env snapshots
+  rlog env delete <file|last> Delete an env snapshot
   rlog data <path> [memo]     Record data/output location
   rlog note <text...>         Free-form note
 
@@ -697,7 +749,7 @@ cmd_delete() {
             local count; count=$(grep -c '^### ' "$f" 2>/dev/null || echo 0)
             [ "$count" -eq 0 ] && echo "No entries to delete." && return 1
             echo "Last entry:"
-            grep '^### ' "$f" | tail -1
+            _preview_entry "$f" "$count"
             local ans; printf "Delete? [y/N]: "; read -r ans
             ans=$(echo "$ans" | tr '[:upper:]' '[:lower:]')
             [ "$ans" != "y" ] && echo "Aborted." && return 0
@@ -735,7 +787,7 @@ cmd_delete() {
             local f; f=$(_dayfile "$date")
             [ ! -f "$f" ] && echo "No log for $date." && return 1
             echo "Entry #$n from $date:"
-            grep '^### ' "$f" | sed -n "${n}p"
+            _preview_entry "$f" "$n"
             local ans; printf "Delete? [y/N]: "; read -r ans
             ans=$(echo "$ans" | tr '[:upper:]' '[:lower:]')
             [ "$ans" != "y" ] && echo "Aborted." && return 0
