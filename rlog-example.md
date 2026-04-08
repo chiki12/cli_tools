@@ -285,6 +285,49 @@ rlog delete day 2026-04-03
 
 ---
 
+## Shell state commands — what rlog run can't do
+
+Some commands modify your current shell's memory rather than just running a program.
+Because `rlog run` executes in a subshell, these changes won't carry back to your terminal:
+
+| Command | Why it doesn't work |
+|---|---|
+| `source file` / `. file` | Runs script inside current shell |
+| `conda activate myenv` | Sets env vars + rewrites PATH |
+| `export VAR=value` | Sets an environment variable |
+| `cd /some/path` | Changes working directory |
+
+**These still work fine with `rlog run`** (they write to disk, not shell memory):
+
+```bash
+rlog run uv pip install torch       # installs packages to disk ✓
+rlog run pip install numpy          # same ✓
+rlog run vllm serve meta-llama/...  # starts a server ✓
+rlog run python train.py            # runs a script ✓
+rlog run ffmpeg -i input.mp4 out.wav
+```
+
+**For shell state commands, use `rlog note` instead:**
+
+```bash
+conda activate myenv
+rlog note "activated myenv #env"
+
+cd /data/project
+rlog note "switched workdir to /data/project"
+
+source .env
+rlog note "loaded .env secrets"
+```
+
+Then snapshot the resulting environment:
+
+```bash
+rlog env "after conda activate myenv"
+```
+
+---
+
 ## The one habit that makes it useful
 
 **Note before you run.**

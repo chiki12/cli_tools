@@ -245,12 +245,14 @@ cmd_run() {
     echo "▶ $cmd"
     echo ""
 
-    # Run and capture
-    local output exit_code
-    output=$(eval "$cmd" 2>&1) || true
-    exit_code=${PIPESTATUS[0]:-$?}
-
-    echo "$output"
+    # Run and capture (tee to temp file for real-time output + logging)
+    local tmpfile
+    tmpfile=$(mktemp)
+    eval "$cmd" 2>&1 | tee "$tmpfile"
+    exit_code=${PIPESTATUS[0]}
+    local output
+    output=$(cat "$tmpfile")
+    rm -f "$tmpfile"
     echo ""
 
     # Re-detect: check if output files now exist and get sizes
@@ -418,16 +420,32 @@ cmd_env() {
     ts=$(_ts)
     local host
     host=$(_host)
-    local envname
-    envname=$(basename "${CONDA_DEFAULT_ENV:-${VIRTUAL_ENV:-system}}" 2>/dev/null)
+    # Detect active environment type
+    local conda_env venv uv_env envname pip_cmd
+    conda_env="${CONDA_DEFAULT_ENV:-N/A}"
+    venv="${VIRTUAL_ENV:-N/A}"
+    uv_env="N/A"
+    pip_cmd="pip"
+
+    if [ -n "${CONDA_DEFAULT_ENV:-}" ]; then
+        envname="$CONDA_DEFAULT_ENV"
+    elif [ -n "${VIRTUAL_ENV:-}" ] && command -v uv &>/dev/null && uv pip list &>/dev/null 2>&1; then
+        envname=$(basename "$VIRTUAL_ENV")
+        uv_env="$VIRTUAL_ENV"
+        pip_cmd="uv pip"
+    elif [ -n "${VIRTUAL_ENV:-}" ]; then
+        envname=$(basename "$VIRTUAL_ENV")
+    elif [ -n "${UV_PROJECT_ENVIRONMENT:-}" ]; then
+        envname=$(basename "$UV_PROJECT_ENVIRONMENT")
+        uv_env="$UV_PROJECT_ENVIRONMENT"
+        pip_cmd="uv pip"
+    else
+        envname="system"
+    fi
 
     # Collect env info
     local py_ver
     py_ver=$(python3 --version 2>/dev/null || python --version 2>/dev/null || echo "N/A")
-    local conda_env
-    conda_env="${CONDA_DEFAULT_ENV:-N/A}"
-    local venv
-    venv="${VIRTUAL_ENV:-N/A}"
 
     # GPU info
     local gpu_info
@@ -435,17 +453,18 @@ cmd_env() {
 
     # Key packages
     local key_pkgs
-    key_pkgs=$(pip list 2>/dev/null | grep -iE "^(torch|tensorflow|sam2|numpy|opencv|torchreid|segment.anything|ultralytics|ffmpeg)" || echo "N/A")
+    key_pkgs=$($pip_cmd list 2>/dev/null | grep -iE "^(torch|tensorflow|sam2|numpy|opencv|torchreid|segment.anything|ultralytics|ffmpeg)" || echo "N/A")
 
     # Save full pip freeze to envs/
     local freeze_file="$ENVDIR/$(_date)_${envname}.txt"
-    pip freeze > "$freeze_file" 2>/dev/null || true
+    $pip_cmd freeze > "$freeze_file" 2>/dev/null || true
 
     local entry=""
     entry+="### [$ts] env snapshot"$'\n\n'
     entry+="- **host:** $host"$'\n'
     entry+="- **conda:** $conda_env"$'\n'
     entry+="- **venv:** $venv"$'\n'
+    entry+="- **uv:** $uv_env"$'\n'
     entry+="- **python:** $py_ver"$'\n'
     entry+="- **gpu:** $gpu_info"$'\n'
     entry+="- **full freeze:** \`$freeze_file\`"$'\n'
@@ -638,17 +657,30 @@ rlog v2 - Research Journal CLI
   rlog tag <name>             Filter by tag
   rlog list                   List all log dates
 
+Limitations - shell state commands:
+  These commands modify your current shell's memory and cannot be logged
+  with 'rlog run' because rlog runs in a subshell:
+    source file / . file     (loads a script into current shell)
+    conda activate <env>     (sets env vars + modifies PATH)
+    export VAR=value         (sets environment variable)
+    cd /some/path            (changes working directory)
+  Use 'rlog note' to record these manually instead:
+    conda activate myenv && rlog note "activated myenv #env"
+    rlog env "after activation"   # snapshot the resulting environment
+
 Config:
   RLOG_DIR=~/research-log     Override log directory
 
 Examples:
   rlog run ffmpeg -i video.mp4 -vn audio.wav
   rlog run python sam2_pipeline.py --input sess3.mp4 --output masks/
-  rlog run mv results/old.npz results/backup/old.npz
+  rlog run vllm serve meta-llama/Llama-3-8B
+  rlog run uv pip install torch
   rlog exp
   rlog env "for SAM2 pipeline"
   rlog data /data/outputs/session3_masks.npz "all frames done"
   rlog note "OOM fixed by setting offload_video_to_cpu=True #sam2"
+  rlog note "activated myenv, switched to /data/project"
   rlog search SAM2
   rlog tag sam2
   rlog today
