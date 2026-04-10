@@ -1,0 +1,782 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": 1,
+      "command": "ln -s /path/to/target /path/to/link",
+      "description": "Create symbolic link. -s makes it symbolic (soft link) not hard. Target is the original file, link is the new path. Use -f to overwrite existing link. Use readlink -f link to see where a symlink points.",
+      "category": "linux",
+      "tags": [
+        "symlink",
+        "link",
+        "filesystem"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 2,
+      "command": "ssh-keygen -t ed25519 -C \"email@example.com\"",
+      "description": "Generate SSH key pair. -t ed25519 is more secure and faster than rsa. -C adds a comment/label. Saved to ~/.ssh/id_ed25519 (private) and .pub (public). Use -f to specify output path. Add to agent: ssh-add ~/.ssh/id_ed25519",
+      "category": "linux",
+      "tags": [
+        "ssh",
+        "keygen",
+        "auth",
+        "security"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 3,
+      "command": "du -sh *",
+      "description": "Check disk usage of each item in current directory. -s summarizes (hides subdirs), -h human-readable (KB/MB/GB). Find largest: du -sh * | sort -rh | head -20",
+      "category": "linux",
+      "tags": [
+        "disk",
+        "usage",
+        "size",
+        "storage"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 4,
+      "command": "du -sh /path/to/folder",
+      "description": "Check total size of a specific folder. Add --max-depth=1 to break down one level of subdirectories. du -ah shows all files including hidden ones.",
+      "category": "linux",
+      "tags": [
+        "disk",
+        "usage",
+        "size",
+        "folder"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 5,
+      "command": "find . -name \"*.py\" -type f",
+      "description": "Find files by name pattern. -type f limits to files (d=dirs, l=symlinks). -iname for case-insensitive. -mtime -7 for modified in last 7 days. -size +100M for files over 100MB. -exec cmd {} \\; to run a command on each result.",
+      "category": "linux",
+      "tags": [
+        "find",
+        "search",
+        "files"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 6,
+      "command": "free -h",
+      "description": "Check system RAM and swap usage. -h human-readable. Shows total/used/free/shared/buff-cache/available. \"available\" is the practical free memory (more useful than \"free\").",
+      "category": "linux",
+      "tags": [
+        "memory",
+        "ram",
+        "usage",
+        "system"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 7,
+      "command": "nvidia-smi",
+      "description": "Show GPU utilization, memory, temperature, and running processes. Monitor live: watch -n 1 nvidia-smi. Parseable: nvidia-smi --query-gpu=gpu_name,memory.used,memory.total,utilization.gpu --format=csv,noheader",
+      "category": "linux",
+      "tags": [
+        "nvidia",
+        "gpu",
+        "memory",
+        "cuda",
+        "monitor"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 8,
+      "command": "df -h",
+      "description": "Check filesystem disk space. -h human-readable. Shows size/used/available/use%/mountpoint per filesystem. Add -T to show filesystem type (ext4, nfs, etc).",
+      "category": "linux",
+      "tags": [
+        "disk",
+        "filesystem",
+        "space",
+        "storage"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 9,
+      "command": "chmod +x script.sh",
+      "description": "Make file executable. +x adds execute for user/group/other. u+x for user only. Numeric: 755 (rwxr-xr-x, public executable), 644 (rw-r--r--), 700 (private executable). -R to recurse into dirs.",
+      "category": "linux",
+      "tags": [
+        "permissions",
+        "chmod",
+        "executable"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 10,
+      "command": "tar -czf archive.tar.gz folder/",
+      "description": "Compress folder to tar.gz. -c create, -z gzip, -f filename. -j for bzip2 (.tar.bz2), -J for xz (.tar.xz). --exclude=\"*.log\" to skip patterns. List contents without extracting: tar -tzf archive.tar.gz",
+      "category": "linux",
+      "tags": [
+        "tar",
+        "compress",
+        "archive",
+        "gzip"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 11,
+      "command": "tar -xzf archive.tar.gz",
+      "description": "Extract tar.gz archive. -x extract, -z gunzip, -f filename. -C /target/dir to extract to a specific directory. -v to list files as extracted. Strip top-level dir: --strip-components=1",
+      "category": "linux",
+      "tags": [
+        "tar",
+        "extract",
+        "archive",
+        "gzip"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 12,
+      "command": "rsync -avz source/ dest/",
+      "description": "Sync files. -a archive (preserves permissions/timestamps/symlinks), -v verbose, -z compress during transfer. --dry-run to preview. --delete removes files not in source. Trailing / on source = contents only (not the dir itself).",
+      "category": "linux",
+      "tags": [
+        "rsync",
+        "sync",
+        "copy",
+        "transfer"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 13,
+      "command": "lsof -i :8080",
+      "description": "Find process using a specific port. Useful for \"port already in use\" errors. Kill it: kill $(lsof -t -i :8080). Alternatives: netstat -tlnp | grep 8080  or  ss -tlnp | grep 8080",
+      "category": "linux",
+      "tags": [
+        "port",
+        "process",
+        "network",
+        "lsof"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 14,
+      "command": "git branch -a",
+      "description": "List all branches. -a shows local and remote tracking branches. -v adds last commit info. Delete: git branch -d name (safe) or -D (force). Show merged: git branch --merged",
+      "category": "git",
+      "tags": [
+        "branch",
+        "list"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 15,
+      "command": "git checkout -b new-branch",
+      "description": "Create and switch to new branch in one step. Equivalent to: git branch new-branch && git checkout new-branch. From a specific commit: git checkout -b new-branch abc1234. Modern alias: git switch -c new-branch",
+      "category": "git",
+      "tags": [
+        "branch",
+        "create",
+        "checkout",
+        "switch"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 16,
+      "command": "git log --oneline --graph --all",
+      "description": "Visual commit history with ASCII branch graph. --oneline: one line per commit. --graph: draw tree. --all: show all branches. Limit: -n 20. Filter by author: --author=\"name\". Filter by date: --after=\"2024-01-01\". Show files changed: --stat",
+      "category": "git",
+      "tags": [
+        "log",
+        "history",
+        "graph"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 17,
+      "command": "git stash && git stash pop",
+      "description": "Temporarily save uncommitted changes then restore. Other commands: stash list (see all), stash drop (discard top), stash apply (restore without removing), stash push -m \"msg\" (label it), stash show -p (see diff)",
+      "category": "git",
+      "tags": [
+        "stash",
+        "save",
+        "restore"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 18,
+      "command": "git diff --staged",
+      "description": "Show changes staged but not yet committed. Without --staged: shows unstaged changes. git diff HEAD: all changes vs last commit. git diff branch1..branch2: compare branches. Add -- file.txt to limit to a specific file.",
+      "category": "git",
+      "tags": [
+        "diff",
+        "staged",
+        "changes"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 19,
+      "command": "git remote -v",
+      "description": "List remote repositories with fetch/push URLs. remote add name url: add remote. remote set-url origin new-url: change URL. remote prune origin: clean up stale remote-tracking branches.",
+      "category": "git",
+      "tags": [
+        "remote",
+        "origin",
+        "url"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 20,
+      "command": "git cherry-pick <commit-hash>",
+      "description": "Apply a specific commit from another branch to current branch. -n: apply without committing. --abort to cancel if conflicts. Range: git cherry-pick A..B applies all commits after A up to B.",
+      "category": "git",
+      "tags": [
+        "cherry-pick",
+        "apply",
+        "commit"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 21,
+      "command": "git rebase -i HEAD~3",
+      "description": "Interactive rebase last 3 commits. Squash, reorder, edit, or drop commits. Commands: pick (keep), squash/s (combine), fixup/f (squash, discard message), drop/d (remove), edit/e (pause to amend). Do not rebase already-pushed commits without force-push.",
+      "category": "git",
+      "tags": [
+        "rebase",
+        "interactive",
+        "squash",
+        "history"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 22,
+      "command": "git reset --soft HEAD~1",
+      "description": "Undo last commit but keep changes staged. --mixed (default): unstage too. --hard: discard everything (destructive). HEAD~2 to go back 2 commits. Recover from mistakes: git reflog then git reset --hard <hash>",
+      "category": "git",
+      "tags": [
+        "reset",
+        "undo",
+        "commit"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 23,
+      "command": "tmux new-session -s name",
+      "description": "Create new named session. -s sets name. -d creates detached (background). -n names first window. Check if exists in scripts: tmux has-session -t name 2>/dev/null",
+      "category": "tmux",
+      "tags": [
+        "session",
+        "create",
+        "new"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 24,
+      "command": "tmux attach -t name",
+      "description": "Attach to existing session by name or index. -d detaches other clients first (single-display mode). Attach to most recent: tmux a. List sessions first: tmux ls",
+      "category": "tmux",
+      "tags": [
+        "session",
+        "attach",
+        "connect"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 25,
+      "command": "tmux kill-session -t name",
+      "description": "Kill a specific session and all its windows/panes. kill-server kills everything. kill-window -t session:1 kills just window 1. Prefix key + & kills current window. Prefix key + x kills current pane.",
+      "category": "tmux",
+      "tags": [
+        "session",
+        "kill",
+        "close"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 26,
+      "command": "tmux list-sessions",
+      "description": "List all running sessions with window count and time. Shorthand: tmux ls. Shows attached/detached status. Check existence in scripts: tmux has-session -t name 2>/dev/null && echo exists",
+      "category": "tmux",
+      "tags": [
+        "session",
+        "list"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 27,
+      "command": "tmux split-window -h",
+      "description": "Split current pane horizontally (left/right panes). -v splits vertically (top/bottom). -p 30 sets new pane to 30% of space. -c /path sets working dir. Prefix + % (horizontal) or \" (vertical) also works.",
+      "category": "tmux",
+      "tags": [
+        "pane",
+        "split",
+        "horizontal"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 28,
+      "command": "tmux split-window -v",
+      "description": "Split current pane vertically (top/bottom panes). Navigate panes: prefix + arrow keys. Resize: prefix + Ctrl+arrow. Zoom pane fullscreen toggle: prefix + z. Swap panes: prefix + { or }.",
+      "category": "tmux",
+      "tags": [
+        "pane",
+        "split",
+        "vertical"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 29,
+      "command": "tmux new-window -n name",
+      "description": "Create new window in current session. -n names it. -c /path sets working dir. Switch windows: prefix + [0-9] or prefix + n/p (next/prev). Rename current window: prefix + ,",
+      "category": "tmux",
+      "tags": [
+        "window",
+        "create",
+        "new"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 30,
+      "command": "tmux select-layout tiled",
+      "description": "Arrange all panes in tiled layout. Options: even-horizontal, even-vertical, main-horizontal, main-vertical, tiled. Prefix + Space cycles through layouts. Useful after splitting many panes.",
+      "category": "tmux",
+      "tags": [
+        "pane",
+        "layout",
+        "tiled",
+        "arrange"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 31,
+      "command": "ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 input.mp4",
+      "description": "Get video dimensions (W,H). -v error suppresses banner. -select_streams v:0 targets first video stream. -of csv=p=0 outputs plain CSV without headers. Output: 1920,1080",
+      "category": "ffprobe",
+      "tags": [
+        "video",
+        "dimensions",
+        "resolution",
+        "width",
+        "height"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 32,
+      "command": "ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of csv=p=0 input.mp4",
+      "description": "Get video frame rate. Returns as fraction: 30/1 = 30fps, 30000/1001 ~= 29.97fps. For file duration: ffprobe -v error -show_entries format=duration -of csv=p=0 input.mp4",
+      "category": "ffprobe",
+      "tags": [
+        "video",
+        "fps",
+        "framerate",
+        "duration"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 33,
+      "command": "ffprobe -v error -show_format -show_streams -of json input.mp4",
+      "description": "Show all media metadata as JSON. show_format: duration, bitrate, format, file size. show_streams: codec, resolution, fps, sample_rate per stream. Pipe to jq: ffprobe ... | jq .streams[0].codec_name",
+      "category": "ffprobe",
+      "tags": [
+        "video",
+        "metadata",
+        "info",
+        "inspect"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 34,
+      "command": "ffmpeg -i input.mp4 -vn -acodec copy output.aac",
+      "description": "Extract audio without re-encoding. -vn disables video. -acodec copy streams audio as-is (fast, no quality loss). Output format set by extension (.aac, .mp3, .wav, .opus). Use -ab 192k to transcode to a specific bitrate instead.",
+      "category": "ffmpeg",
+      "tags": [
+        "audio",
+        "extract",
+        "copy"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 35,
+      "command": "ffmpeg -i input.mp4 -an -vcodec copy output.mp4",
+      "description": "Remove audio track. -an disables audio. -vcodec copy keeps video without re-encoding (fast). Result is a silent video. To replace audio, use the combine command.",
+      "category": "ffmpeg",
+      "tags": [
+        "audio",
+        "remove",
+        "video",
+        "mute"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 36,
+      "command": "ffmpeg -i input.mp4 -i audio.aac -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 output.mp4",
+      "description": "Combine video with new audio. -map 0:v:0 takes video from first input, -map 1:a:0 takes audio from second. -c:v copy avoids re-encoding video (fast). Add -shortest to stop at the shorter stream.",
+      "category": "ffmpeg",
+      "tags": [
+        "audio",
+        "video",
+        "combine",
+        "mux",
+        "merge"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 37,
+      "command": "ffmpeg -i input.mp4 -vf \"crop=640:480:100:50\" output.mp4",
+      "description": "Crop video to region. Format: crop=out_w:out_h:x:y (x,y = top-left corner). Use expressions: crop=iw/2:ih/2:0:0 (top-left quarter). Auto-detect black bars: first run with -vf cropdetect, then use reported values.",
+      "category": "ffmpeg",
+      "tags": [
+        "video",
+        "crop",
+        "region"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 38,
+      "command": "ffmpeg -i input.mp4 -vf \"crop=iw/2:ih/2:iw/4:ih/4\" output.mp4",
+      "description": "Crop center 50% of video. iw/ih are input width/height as expressions. iw/4:ih/4 centers the crop (offsets 25% from each edge). For 75%: crop=iw*3/4:ih*3/4:iw/8:ih/8",
+      "category": "ffmpeg",
+      "tags": [
+        "video",
+        "crop",
+        "proportional",
+        "center"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 39,
+      "command": "ffmpeg -i input.mp4 -vf \"scale=1280:720\" output.mp4",
+      "description": "Resize video. Use -1 for auto dimension (preserves aspect ratio): scale=1280:-1. Use -2 to ensure even dimensions (required by some codecs): scale=1280:-2. Fit in bounds with letterbox: scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2",
+      "category": "ffmpeg",
+      "tags": [
+        "video",
+        "resize",
+        "scale",
+        "resolution"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 40,
+      "command": "ffmpeg -i input.mp4 -ss 00:01:00 -to 00:02:00 -c copy output.mp4",
+      "description": "Trim video by timestamp. -ss start, -to end time. Use -t for duration instead: -t 00:01:00. -c copy skips re-encoding (fast, but cut may be slightly imprecise at keyframe boundaries). Remove -c copy for frame-accurate cuts (slower, re-encodes).",
+      "category": "ffmpeg",
+      "tags": [
+        "video",
+        "trim",
+        "cut",
+        "time"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 41,
+      "command": "ffmpeg -i input.mp4 -vf \"select=between(n\\,100\\,200),setpts=N/FRAME_RATE/TB\" -af \"aselect=between(n\\,100\\,200),asetpts=N/SR/TB\" output.mp4",
+      "description": "Trim video by frame number (0-indexed). select/aselect filter frames, setpts/asetpts reset timestamps so output starts at 0. For video-only, replace -af part with -an. Get frame numbers first with ffprobe.",
+      "category": "ffmpeg",
+      "tags": [
+        "video",
+        "trim",
+        "frames",
+        "cut"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 42,
+      "command": "ffmpeg -i input.mp4 -vf \"fps=1\" frame_%04d.png",
+      "description": "Extract video frames as images. fps=1 = 1 frame/sec. fps=0.5 = one every 2 sec. fps=25 = all frames. %04d produces frame_0001.png, frame_0002.png. Extract just the first frame: -vf \"select=eq(n\\,0)\" -vframes 1 first.png",
+      "category": "ffmpeg",
+      "tags": [
+        "video",
+        "frames",
+        "extract",
+        "images",
+        "fps"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 43,
+      "command": "ffmpeg -i input.mp4 -vf \"fps=10,scale=320:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse\" output.gif",
+      "description": "Convert video to high-quality GIF with optimized palette. fps=10: frame rate (lower = smaller file). scale=320:-1: resize width to 320. palettegen+paletteuse produces much better colors than simple conversion. Increase scale for larger GIF.",
+      "category": "ffmpeg",
+      "tags": [
+        "video",
+        "gif",
+        "convert",
+        "animation"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 44,
+      "command": "ffmpeg -i input.mp4 -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k output.mp4",
+      "description": "Re-encode video with H.264. -crf: quality (0=lossless, 18=visually lossless, 23=default, 51=worst). -preset: ultrafast/fast/medium/slow/veryslow (slower = smaller file, same quality). -b:a: audio bitrate. Use libx265 for H.265/HEVC (better compression).",
+      "category": "ffmpeg",
+      "tags": [
+        "video",
+        "encode",
+        "compress",
+        "h264",
+        "crf"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 45,
+      "command": "identify -format \"%wx%h\\n\" image.png",
+      "description": "Get image dimensions (WxH). Format codes: %w=width, %h=height, %z=bit depth, %m=format, %b=file size. Use identify -verbose image.png for all metadata. Works on JPG, PNG, TIFF, WebP, etc.",
+      "category": "imagemagick",
+      "tags": [
+        "image",
+        "dimensions",
+        "size",
+        "info"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 46,
+      "command": "convert input.png -crop 100x100+50+50 output.png",
+      "description": "Crop image to region. Format: WxH+X+Y where X,Y is top-left offset. 100x100 pixel area starting at (50,50). Add +repage after crop to reset virtual canvas. -gravity Center -crop 100x100+0+0 crops from center.",
+      "category": "imagemagick",
+      "tags": [
+        "image",
+        "crop",
+        "region"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 47,
+      "command": "convert input.png -gravity Center -crop 50%x50%+0+0 +repage output.png",
+      "description": "Crop center 50% of image. -gravity Center positions crop in the middle. 50%x50% takes half width and height. +repage removes virtual canvas offset artifacts. Use -gravity NorthWest for top-left origin.",
+      "category": "imagemagick",
+      "tags": [
+        "image",
+        "crop",
+        "proportional",
+        "center"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 48,
+      "command": "convert input.png -resize 800x600 output.png",
+      "description": "Resize image preserving aspect ratio (fits within 800x600). 800x600! forces exact size (may distort). 800x600> only shrinks if larger. 800x600^ fills bounds (may overflow, pair with -gravity and -extent). 50% to scale by percentage.",
+      "category": "imagemagick",
+      "tags": [
+        "image",
+        "resize",
+        "scale"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 49,
+      "command": "uv venv .venv",
+      "description": "Create virtual environment in .venv dir. Specify Python version: uv venv --python 3.11. Much faster than python -m venv (written in Rust). Creates .venv/bin/activate and .venv/bin/python.",
+      "category": "uv",
+      "tags": [
+        "venv",
+        "virtualenv",
+        "python",
+        "create"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 50,
+      "command": "source .venv/bin/activate",
+      "description": "Activate virtual environment. fish shell: source .venv/bin/activate.fish. Windows: .venv\\Scripts\\activate. Deactivate: deactivate. Check active env: which python  or  echo $VIRTUAL_ENV",
+      "category": "uv",
+      "tags": [
+        "venv",
+        "activate",
+        "python"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 51,
+      "command": "uv pip install package",
+      "description": "Install Python package (much faster than pip, uses parallel downloads). Multiple: uv pip install pkg1 pkg2. From file: uv pip install -r requirements.txt. Editable: uv pip install -e . Skip cache: --no-cache",
+      "category": "uv",
+      "tags": [
+        "pip",
+        "install",
+        "python",
+        "package"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 52,
+      "command": "uv pip freeze",
+      "description": "List installed packages with pinned versions (pip freeze format). Generate requirements: uv pip freeze > requirements.txt. Useful for auditing venv contents.",
+      "category": "uv",
+      "tags": [
+        "pip",
+        "freeze",
+        "packages",
+        "list"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 53,
+      "command": "uv pip compile requirements.in -o requirements.txt",
+      "description": "Resolve and pin all dependencies. Takes loose requirements.in and produces fully pinned requirements.txt. --upgrade to update all. --upgrade-package pkg for one package. --generate-hashes for secure reproducible installs.",
+      "category": "uv",
+      "tags": [
+        "pip",
+        "compile",
+        "lock",
+        "dependencies"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 54,
+      "command": "uv run script.py",
+      "description": "Run Python script with automatic dependency handling. Reads inline script metadata (PEP 723) or pyproject.toml. No manual venv activation needed. Specify Python: uv run --python 3.11 script.py. Run tools: uv run pytest",
+      "category": "uv",
+      "tags": [
+        "run",
+        "python",
+        "script",
+        "execute"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 55,
+      "command": "conda create -n myenv python=3.11",
+      "description": "Create new conda environment with specific Python. -n names it. Include packages upfront: conda create -n myenv python=3.11 numpy pandas. -y skips confirmation. --clone existing_env to copy an environment.",
+      "category": "conda",
+      "tags": [
+        "create",
+        "environment",
+        "python"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 56,
+      "command": "conda activate myenv",
+      "description": "Activate conda environment. Requires conda init (one-time setup). conda activate with no name goes to base. Check current: echo $CONDA_DEFAULT_ENV  or  conda info",
+      "category": "conda",
+      "tags": [
+        "activate",
+        "environment"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 57,
+      "command": "conda deactivate",
+      "description": "Deactivate current environment, return to base or system Python. Can be called multiple times if activations were nested.",
+      "category": "conda",
+      "tags": [
+        "deactivate",
+        "environment"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 58,
+      "command": "conda env list",
+      "description": "List all conda environments with their paths. Active env marked with *. Shorthand: conda info --envs. Check sizes: du -sh ~/miniconda3/envs/*",
+      "category": "conda",
+      "tags": [
+        "list",
+        "environments"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 59,
+      "command": "conda install -c conda-forge package",
+      "description": "Install package from conda-forge (larger, more up-to-date than default channel). Specific version: conda install package=1.2.3. Multiple: conda install pkg1 pkg2. -y skips confirmation. Use mamba instead of conda for much faster dependency solving.",
+      "category": "conda",
+      "tags": [
+        "install",
+        "package",
+        "conda-forge"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 60,
+      "command": "conda env remove -n myenv",
+      "description": "Delete a conda environment completely. Cannot remove the currently active env (deactivate first). -y skips confirmation. Removes all installed packages in that env. Cannot be undone.",
+      "category": "conda",
+      "tags": [
+        "remove",
+        "delete",
+        "environment"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 61,
+      "command": "conda env export > environment.yml",
+      "description": "Export environment to YAML for reproducibility. Recreate: conda env create -f environment.yml. --no-builds for cross-platform compatibility. --from-history exports only explicitly installed packages (not auto-installed deps).",
+      "category": "conda",
+      "tags": [
+        "export",
+        "environment",
+        "yaml",
+        "reproduce"
+      ],
+      "added": "2026-04-11"
+    },
+    {
+      "id": 62,
+      "command": "echo hello",
+      "description": "Print to stdout",
+      "category": "linux",
+      "tags": [
+        "echo",
+        "shell",
+        "test"
+      ],
+      "added": "2026-04-11"
+    }
+  ]
+}
