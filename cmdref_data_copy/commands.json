@@ -777,33 +777,6 @@
         "test"
       ],
       "added": "2026-04-11"
-    },
-    {
-      "id": 63,
-      "command": "git init",
-      "description": "make a new git repo from local. git init, git add . , git commit -m \"comment\", gh auto login, gh repo create YOUR_REPO_NAME --private --source=. --remote=origin --push. Don't forget to make gitignore file before git add",
-      "category": "git",
-      "tags": [
-        "init",
-        "remote repo"
-      ],
-      "added": "2026-04-13"
-    },
-    {
-      "id": 64,
-      "command": "git rm -r --cached 'folderpath'",
-      "description": "remove from git. remove the folder and everything inside it from Git only, and keeps it on the local device.",
-      "category": "git",
-      "tags": [],
-      "added": "2026-04-13"
-    },
-    {
-      "id": 65,
-      "command": "caffeinate command",
-      "description": "Mac stays awake for the duration of that utility. caffeinate -d : prevents the display from sleeping, caffeinate -i, prevents the system from idle sleep, caffeinate -m: prevents disk sleep. caffeinate -s: prevents system sleep on AC power. -t: you can set time(in second)",
-      "category": "linux",
-      "tags": [],
-      "added": "2026-04-13"
     }
   ]
 }

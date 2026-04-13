@@ -1,0 +1,874 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+# cmdref — Command Reference CLI v1.0
+#
+# Usage:
+#   cmdref add "command" [-d desc] [-c category] [-t tag1,tag2]
+#   cmdref add -i
+#   cmdref search <keyword> [keyword...]   (alias: s)
+#   cmdref list [category]                 (alias: ls)
+#   cmdref show <id>
+#   cmdref tag add <id> <tag> [tag...]
+#   cmdref tag rm  <id> <tag> [tag...]
+#   cmdref rm <id>
+#   cmdref categories
+#   cmdref edit <id>
+#   cmdref export [file]
+#   cmdref import <file>
+#   cmdref init
+#   cmdref help
+#
+# Config:
+#   CMDREF_DIR   Data directory (default: /cmdref_data/)
+#   EDITOR       Editor for cmdref edit (default: vi)
+# ─────────────────────────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+CMDREF_DIR="$SCRIPT_DIR/cmdref_data"
+DATA_FILE="$CMDREF_DIR/commands.json"
+mkdir -p "$CMDREF_DIR"
+
+#echo "SCRIPT_DIR=$SCRIPT_DIR"
+#echo "CMDREF_DIR=$CMDREF_DIR"
+#echo "DATA_FILE=$DATA_FILE"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+_date() { date '+%Y-%m-%d'; }
+
+_separator() {
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
+_require_jq() {
+  command -v jq &>/dev/null && return 0
+  echo "✗ jq is required but not installed."
+  echo "  macOS:  brew install jq"
+  echo "  Ubuntu: sudo apt install jq"
+  echo "  CentOS: sudo yum install jq"
+  exit 1
+}
+
+_init_datafile() {
+  [[ -f "$DATA_FILE" ]] || echo '{"version":1,"entries":[]}' > "$DATA_FILE"
+}
+
+_next_id() {
+  jq '[.entries[].id] | if length == 0 then 1 else max + 1 end' "$DATA_FILE"
+}
+
+_entry_exists() {
+  local id="$1"
+  [[ -n "$(jq --argjson id "$id" '.entries[] | select(.id == $id)' "$DATA_FILE")" ]]
+}
+
+_jq_write() {
+  local tmp
+  tmp=$(mktemp)
+  jq "$@" "$DATA_FILE" > "$tmp" && mv "$tmp" "$DATA_FILE"
+}
+
+_normalize_tags() {
+  local input="$1"
+  if [[ -z "$input" ]]; then
+    echo "[]"
+    return
+  fi
+  printf '%s' "$input" | tr ',' '\n' | \
+    sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | \
+    tr '[:upper:]' '[:lower:]' | sed 's/^#//' | \
+    grep -v '^$' | jq -R . | jq -s .
+}
+
+_fmt_entry() {
+  local entry="$1"
+  local id category command description tags added
+  id=$(printf '%s' "$entry" | jq -r '.id')
+  category=$(printf '%s' "$entry" | jq -r '.category')
+  command=$(printf '%s' "$entry" | jq -r '.command')
+  description=$(printf '%s' "$entry" | jq -r '.description')
+  tags=$(printf '%s' "$entry" | jq -r '.tags | join(", ")')
+  added=$(printf '%s' "$entry" | jq -r '.added')
+
+  _separator
+  printf "  #%-4s [%s]\n" "$id" "$category"
+  echo "  $command"
+  echo ""
+  echo "  $description"
+  echo ""
+  [[ -n "$tags" ]] && echo "  tags: $tags"
+  echo "  added: $added"
+  _separator
+}
+
+_fmt_list_entry() {
+  local entry="$1"
+  local id category command
+  id=$(printf '%s' "$entry" | jq -r '.id')
+  category=$(printf '%s' "$entry" | jq -r '.category')
+  command=$(printf '%s' "$entry" | jq -r '.command')
+  if [[ ${#command} -gt 55 ]]; then
+    command="${command:0:52}..."
+  fi
+  printf "  #%-4s  %-14s  %s\n" "$id" "[$category]" "$command"
+}
+
+_fmt_picker_entry() {
+  local idx="$1" entry="$2"
+  local command description
+  command=$(printf '%s' "$entry" | jq -r '.command')
+  description=$(printf '%s' "$entry" | jq -r '.description')
+  # First sentence of description
+  local short_desc
+  short_desc=$(printf '%s' "$description" | cut -d'.' -f1)
+  if [[ ${#command} -gt 44 ]]; then command="${command:0:41}..."; fi
+  if [[ ${#short_desc} -gt 46 ]]; then short_desc="${short_desc:0:43}..."; fi
+  printf "  [%-2s]  %-46s  %s\n" "$idx" "$command" "$short_desc"
+}
+
+# Global used by _interactive_category_picker to avoid subshell
+_CMDREF_CHOSEN_CAT=""
+
+_interactive_category_picker() {
+  local cats_json cat_count
+  cats_json=$(jq '[.entries[].category] | group_by(.) | map({name: .[0], count: length}) | sort_by(-.count)' "$DATA_FILE")
+  cat_count=$(printf '%s' "$cats_json" | jq 'length')
+
+  [[ $cat_count -eq 0 ]] && { echo "No entries yet."; return 1; }
+
+  echo "Categories:"
+  local i=1 cat_entry name count
+  while IFS= read -r cat_entry; do
+    name=$(printf '%s' "$cat_entry" | jq -r '.name')
+    count=$(printf '%s' "$cat_entry" | jq -r '.count')
+    printf "  [%d]  %-14s  (%d)\n" "$i" "$name" "$count"
+    ((i++))
+  done < <(printf '%s' "$cats_json" | jq -c '.[]')
+
+  echo ""
+  local sel
+  read -rp "Category [1-$cat_count, q=quit]: " sel
+  sel=$(printf '%s' "$sel" | tr '[:upper:]' '[:lower:]')
+
+  if [[ "$sel" == "q" || -z "$sel" ]]; then
+    return 1
+  fi
+
+  if [[ "$sel" =~ ^[0-9]+$ ]] && [[ "$sel" -ge 1 ]] && [[ "$sel" -le "$cat_count" ]]; then
+    _CMDREF_CHOSEN_CAT=$(printf '%s' "$cats_json" | jq -r --argjson idx "$(( sel - 1 ))" '.[$idx].name')
+    return 0
+  else
+    echo "✗ Invalid selection: $sel"
+    return 1
+  fi
+}
+
+_interactive_entry_picker() {
+  local entries_json="$1"
+  local count
+  count=$(printf '%s' "$entries_json" | jq 'length')
+
+  [[ $count -eq 0 ]] && { echo "No entries."; return 0; }
+
+  local i=1 entry
+  while IFS= read -r entry; do
+    _fmt_picker_entry "$i" "$entry"
+    ((i++))
+  done < <(printf '%s' "$entries_json" | jq -c '.[]')
+
+  echo ""
+  local sel
+  read -rp "Show [1-$count / all / q=quit]: " sel
+  sel=$(printf '%s' "$sel" | tr '[:upper:]' '[:lower:]' | tr ',' ' ')
+
+  if [[ "$sel" == "q" || -z "$sel" ]]; then
+    return 0
+  elif [[ "$sel" == "all" ]]; then
+    echo ""
+    while IFS= read -r entry; do
+      _fmt_entry "$entry"
+      echo ""
+    done < <(printf '%s' "$entries_json" | jq -c '.[]')
+  else
+    echo ""
+    for n in $sel; do
+      [[ "$n" =~ ^[0-9]+$ ]] || continue
+      local idx=$(( n - 1 ))
+      entry=$(printf '%s' "$entries_json" | jq -c --argjson i "$idx" '.[$i] // empty')
+      [[ -n "$entry" ]] && { _fmt_entry "$entry"; echo ""; }
+    done
+  fi
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Commands
+# ─────────────────────────────────────────────────────────────────────────────
+
+cmd_add() {
+  _require_jq
+  _init_datafile
+
+  local cmd_str="" description="" category="" tags=""
+
+  if [[ "${1:-}" == "-i" ]]; then
+    echo "Add new entry (interactive)"
+    echo "───────────────────────────"
+    read -rp "  Command     : " cmd_str
+    [[ -z "$cmd_str" ]] && { echo "✗ Command cannot be empty."; return 1; }
+    read -rp "  Description : " description
+    read -rp "  Category    : " category
+    read -rp "  Tags (comma): " tags
+  else
+    [[ $# -lt 1 ]] && {
+      echo "Usage: cmdref add \"command\" [-d desc] [-c category] [-t tag1,tag2]"
+      echo "       cmdref add -i"
+      return 1
+    }
+    cmd_str="$1"; shift
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        -d|--desc)     description="$2"; shift 2 ;;
+        -c|--category) category="$2"; shift 2 ;;
+        -t|--tags)     tags="$2"; shift 2 ;;
+        *) echo "✗ Unknown option: $1"; return 1 ;;
+      esac
+    done
+  fi
+
+  [[ -z "$cmd_str" ]] && { echo "✗ Command cannot be empty."; return 1; }
+  category=$(printf '%s' "${category:-uncategorized}" | tr '[:upper:]' '[:lower:]')
+  local tags_json next_id today
+  tags_json=$(_normalize_tags "$tags")
+  next_id=$(_next_id)
+  today=$(_date)
+
+  _jq_write \
+    --arg cmd "$cmd_str" \
+    --arg desc "$description" \
+    --arg cat "$category" \
+    --argjson tags "$tags_json" \
+    --argjson id "$next_id" \
+    --arg added "$today" \
+    '.entries += [{"id":$id,"command":$cmd,"description":$desc,"category":$cat,"tags":$tags,"added":$added}]'
+
+  echo "✓ added #$next_id [$category]"
+}
+
+cmd_search() {
+  _require_jq
+  _init_datafile
+
+  [[ $# -lt 1 ]] && { echo "Usage: cmdref search <keyword> [keyword...]"; return 1; }
+
+  local pattern
+  if [[ $# -eq 1 ]]; then
+    pattern="$1"
+  else
+    pattern=$(printf '%s|' "$@")
+    pattern="${pattern%|}"
+  fi
+
+  local results count
+  results=$(jq -c \
+    --arg pattern "$pattern" \
+    '[.entries[] | select(
+      (.command + " " + .description + " " + .category + " " + (.tags | join(" ")))
+      | test($pattern; "i")
+    )]' "$DATA_FILE")
+  count=$(printf '%s' "$results" | jq 'length')
+
+  if [[ $count -eq 0 ]]; then
+    echo "No results for: $*"
+    return 0
+  fi
+
+  if [[ $count -eq 1 ]]; then
+    echo "(1 result for: $*)"
+  else
+    echo "($count results for: $*)"
+  fi
+  echo ""
+  _interactive_entry_picker "$results"
+}
+
+cmd_list() {
+  _require_jq
+  _init_datafile
+
+  local category="${1:-}"
+  local entries count
+
+  if [[ -n "$category" ]]; then
+    category=$(printf '%s' "$category" | tr '[:upper:]' '[:lower:]')
+    entries=$(jq -c --arg cat "$category" '[.entries[] | select(.category == $cat)]' "$DATA_FILE")
+    count=$(printf '%s' "$entries" | jq 'length')
+    if [[ $count -eq 0 ]]; then
+      echo "No entries in: $category"
+      return 0
+    fi
+    echo "$category ($count entries):"
+    echo ""
+    _interactive_entry_picker "$entries"
+  else
+    count=$(jq '.entries | length' "$DATA_FILE")
+    if [[ $count -eq 0 ]]; then
+      echo "No entries yet. Run: cmdref init  or  cmdref add -i"
+      return 0
+    fi
+    if ! _interactive_category_picker; then return 0; fi
+    entries=$(jq -c --arg cat "$_CMDREF_CHOSEN_CAT" '[.entries[] | select(.category == $cat)]' "$DATA_FILE")
+    count=$(printf '%s' "$entries" | jq 'length')
+    echo ""
+    echo "$_CMDREF_CHOSEN_CAT ($count entries):"
+    echo ""
+    _interactive_entry_picker "$entries"
+  fi
+}
+
+cmd_show() {
+  _require_jq
+  _init_datafile
+
+  [[ $# -lt 1 ]] && { echo "Usage: cmdref show <id>"; return 1; }
+  local id="$1"
+
+  if ! _entry_exists "$id"; then
+    echo "✗ Entry #$id not found."
+    return 1
+  fi
+
+  local entry
+  entry=$(jq -c --argjson id "$id" '.entries[] | select(.id == $id)' "$DATA_FILE")
+  _fmt_entry "$entry"
+}
+
+cmd_tag() {
+  _require_jq
+  _init_datafile
+
+  if [[ $# -lt 3 ]]; then
+    echo "Usage: cmdref tag add <id> <tag> [tag...]"
+    echo "       cmdref tag rm  <id> <tag> [tag...]"
+    return 1
+  fi
+
+  local action="$1" id="$2"; shift 2
+
+  if ! _entry_exists "$id"; then
+    echo "✗ Entry #$id not found."
+    return 1
+  fi
+
+  case "$action" in
+    add)
+      for tag in "$@"; do
+        tag=$(printf '%s' "$tag" | tr '[:upper:]' '[:lower:]' | sed 's/^#//')
+        _jq_write --argjson id "$id" --arg tag "$tag" \
+          '(.entries[] | select(.id == $id) | .tags) |= (. + [$tag] | unique)'
+      done
+      echo "✓ tag(s) added: $* → #$id"
+      ;;
+    rm|remove)
+      for tag in "$@"; do
+        tag=$(printf '%s' "$tag" | tr '[:upper:]' '[:lower:]' | sed 's/^#//')
+        _jq_write --argjson id "$id" --arg tag "$tag" \
+          '(.entries[] | select(.id == $id) | .tags) |= map(select(. != $tag))'
+      done
+      echo "✓ tag(s) removed: $* ← #$id"
+      ;;
+    *)
+      echo "✗ Unknown action: $action (use add or rm)"
+      return 1
+      ;;
+  esac
+}
+
+cmd_rm() {
+  _require_jq
+  _init_datafile
+
+  [[ $# -lt 1 ]] && { echo "Usage: cmdref rm <id>"; return 1; }
+  local id="$1"
+
+  if ! _entry_exists "$id"; then
+    echo "✗ Entry #$id not found."
+    return 1
+  fi
+
+  local entry
+  entry=$(jq -c --argjson id "$id" '.entries[] | select(.id == $id)' "$DATA_FILE")
+  _fmt_entry "$entry"
+  echo ""
+
+  printf "Delete #%s? [y/N]: " "$id"
+  read -r ans
+  ans=$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')
+
+  if [[ "$ans" == "y" ]]; then
+    _jq_write --argjson id "$id" '.entries |= map(select(.id != $id))'
+    echo "✓ deleted #$id"
+  else
+    echo "Cancelled."
+  fi
+}
+
+cmd_categories() {
+  _require_jq
+  _init_datafile
+
+  local result
+  result=$(jq -r '
+    [.entries[].category]
+    | group_by(.)
+    | map({name: .[0], count: length})
+    | sort_by(-.count)
+    | .[]
+    | "  \(.name)  (\(.count))"
+  ' "$DATA_FILE")
+
+  if [[ -z "$result" ]]; then
+    echo "No entries yet."
+    return 0
+  fi
+
+  echo "Categories:"
+  echo "$result"
+}
+
+cmd_edit() {
+  _require_jq
+  _init_datafile
+
+  [[ $# -lt 1 ]] && { echo "Usage: cmdref edit <id>"; return 1; }
+  local id="$1"
+
+  if ! _entry_exists "$id"; then
+    echo "✗ Entry #$id not found."
+    return 1
+  fi
+
+  local tmp
+  tmp=$(mktemp --suffix=.json 2>/dev/null || mktemp)
+  jq --argjson id "$id" '.entries[] | select(.id == $id)' "$DATA_FILE" > "$tmp"
+
+  "${EDITOR:-vi}" "$tmp"
+
+  if ! jq empty "$tmp" 2>/dev/null; then
+    echo "✗ Invalid JSON, changes discarded."
+    rm -f "$tmp"
+    return 1
+  fi
+
+  _jq_write --argjson id "$id" --slurpfile updated "$tmp" \
+    '.entries = [.entries[] | if .id == $id then $updated[0] else . end]'
+
+  rm -f "$tmp"
+  echo "✓ updated #$id"
+}
+
+cmd_export() {
+  _require_jq
+  _init_datafile
+
+  local file="${1:-}"
+  if [[ -n "$file" ]]; then
+    jq '.' "$DATA_FILE" > "$file"
+    echo "✓ exported to $file"
+  else
+    jq '.' "$DATA_FILE"
+  fi
+}
+
+cmd_import() {
+  _require_jq
+  _init_datafile
+
+  [[ $# -lt 1 ]] && { echo "Usage: cmdref import <file>"; return 1; }
+  local file="$1"
+
+  [[ ! -f "$file" ]] && { echo "✗ File not found: $file"; return 1; }
+
+  if ! jq empty "$file" 2>/dev/null; then
+    echo "✗ Invalid JSON file."
+    return 1
+  fi
+
+  local import_entries
+  import_entries=$(jq 'if type == "array" then . elif .entries then .entries else error end' "$file" 2>/dev/null)
+
+  if [[ $? -ne 0 ]]; then
+    echo "✗ JSON must be an array or {\"entries\": [...]} object."
+    return 1
+  fi
+
+  local count i=0
+  count=$(printf '%s' "$import_entries" | jq 'length')
+  [[ $count -eq 0 ]] && { echo "No entries to import."; return 0; }
+
+  while [[ $i -lt $count ]]; do
+    local next_id entry
+    next_id=$(_next_id)
+    entry=$(printf '%s' "$import_entries" | jq --argjson idx "$i" '.[$idx]')
+    _jq_write --argjson entry "$entry" --argjson id "$next_id" \
+      '.entries += [$entry | .id = $id]'
+    ((i++))
+  done
+
+  echo "✓ imported $count entries"
+}
+
+cmd_init() {
+  _require_jq
+  _init_datafile
+
+  local count
+  count=$(jq '.entries | length' "$DATA_FILE")
+
+  if [[ $count -gt 0 ]]; then
+    printf "Data file already has %d entries. Overwrite with examples? [y/N]: " "$count"
+    read -r ans
+    ans=$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')
+    [[ "$ans" != "y" ]] && { echo "Cancelled."; return 0; }
+    echo '{"version":1,"entries":[]}' > "$DATA_FILE"
+  fi
+
+  local today
+  today=$(_date)
+
+  _ea() {
+    local tags_json
+    tags_json=$(_normalize_tags "$4")
+    local next_id
+    next_id=$(_next_id)
+    _jq_write \
+      --arg cmd "$1" \
+      --arg desc "$2" \
+      --arg cat "$3" \
+      --argjson tags "$tags_json" \
+      --argjson id "$next_id" \
+      --arg added "$today" \
+      '.entries += [{"id":$id,"command":$cmd,"description":$desc,"category":$cat,"tags":$tags,"added":$added}]'
+  }
+
+  echo "Adding example entries..."
+
+  # ── linux ──────────────────────────────────────────────────────────────────
+  _ea 'ln -s /path/to/target /path/to/link' \
+    'Create symbolic link. -s makes it symbolic (soft link) not hard. Target is the original file, link is the new path. Use -f to overwrite existing link. Use readlink -f link to see where a symlink points.' \
+    'linux' 'symlink,link,filesystem'
+
+  _ea 'ssh-keygen -t ed25519 -C "email@example.com"' \
+    'Generate SSH key pair. -t ed25519 is more secure and faster than rsa. -C adds a comment/label. Saved to ~/.ssh/id_ed25519 (private) and .pub (public). Use -f to specify output path. Add to agent: ssh-add ~/.ssh/id_ed25519' \
+    'linux' 'ssh,keygen,auth,security'
+
+  _ea 'du -sh *' \
+    'Check disk usage of each item in current directory. -s summarizes (hides subdirs), -h human-readable (KB/MB/GB). Find largest: du -sh * | sort -rh | head -20' \
+    'linux' 'disk,usage,size,storage'
+
+  _ea 'du -sh /path/to/folder' \
+    'Check total size of a specific folder. Add --max-depth=1 to break down one level of subdirectories. du -ah shows all files including hidden ones.' \
+    'linux' 'disk,usage,size,folder'
+
+  _ea 'find . -name "*.py" -type f' \
+    'Find files by name pattern. -type f limits to files (d=dirs, l=symlinks). -iname for case-insensitive. -mtime -7 for modified in last 7 days. -size +100M for files over 100MB. -exec cmd {} \; to run a command on each result.' \
+    'linux' 'find,search,files'
+
+  _ea 'free -h' \
+    'Check system RAM and swap usage. -h human-readable. Shows total/used/free/shared/buff-cache/available. "available" is the practical free memory (more useful than "free").' \
+    'linux' 'memory,ram,usage,system'
+
+  _ea 'nvidia-smi' \
+    'Show GPU utilization, memory, temperature, and running processes. Monitor live: watch -n 1 nvidia-smi. Parseable: nvidia-smi --query-gpu=gpu_name,memory.used,memory.total,utilization.gpu --format=csv,noheader' \
+    'linux' 'nvidia,gpu,memory,cuda,monitor'
+
+  _ea 'df -h' \
+    'Check filesystem disk space. -h human-readable. Shows size/used/available/use%/mountpoint per filesystem. Add -T to show filesystem type (ext4, nfs, etc).' \
+    'linux' 'disk,filesystem,space,storage'
+
+  _ea 'chmod +x script.sh' \
+    'Make file executable. +x adds execute for user/group/other. u+x for user only. Numeric: 755 (rwxr-xr-x, public executable), 644 (rw-r--r--), 700 (private executable). -R to recurse into dirs.' \
+    'linux' 'permissions,chmod,executable'
+
+  _ea 'tar -czf archive.tar.gz folder/' \
+    'Compress folder to tar.gz. -c create, -z gzip, -f filename. -j for bzip2 (.tar.bz2), -J for xz (.tar.xz). --exclude="*.log" to skip patterns. List contents without extracting: tar -tzf archive.tar.gz' \
+    'linux' 'tar,compress,archive,gzip'
+
+  _ea 'tar -xzf archive.tar.gz' \
+    'Extract tar.gz archive. -x extract, -z gunzip, -f filename. -C /target/dir to extract to a specific directory. -v to list files as extracted. Strip top-level dir: --strip-components=1' \
+    'linux' 'tar,extract,archive,gzip'
+
+  _ea 'rsync -avz source/ dest/' \
+    'Sync files. -a archive (preserves permissions/timestamps/symlinks), -v verbose, -z compress during transfer. --dry-run to preview. --delete removes files not in source. Trailing / on source = contents only (not the dir itself).' \
+    'linux' 'rsync,sync,copy,transfer'
+
+  _ea 'lsof -i :8080' \
+    'Find process using a specific port. Useful for "port already in use" errors. Kill it: kill $(lsof -t -i :8080). Alternatives: netstat -tlnp | grep 8080  or  ss -tlnp | grep 8080' \
+    'linux' 'port,process,network,lsof'
+
+  # ── git ────────────────────────────────────────────────────────────────────
+  _ea 'git branch -a' \
+    'List all branches. -a shows local and remote tracking branches. -v adds last commit info. Delete: git branch -d name (safe) or -D (force). Show merged: git branch --merged' \
+    'git' 'branch,list'
+
+  _ea 'git checkout -b new-branch' \
+    'Create and switch to new branch in one step. Equivalent to: git branch new-branch && git checkout new-branch. From a specific commit: git checkout -b new-branch abc1234. Modern alias: git switch -c new-branch' \
+    'git' 'branch,create,checkout,switch'
+
+  _ea 'git log --oneline --graph --all' \
+    'Visual commit history with ASCII branch graph. --oneline: one line per commit. --graph: draw tree. --all: show all branches. Limit: -n 20. Filter by author: --author="name". Filter by date: --after="2024-01-01". Show files changed: --stat' \
+    'git' 'log,history,graph'
+
+  _ea 'git stash && git stash pop' \
+    'Temporarily save uncommitted changes then restore. Other commands: stash list (see all), stash drop (discard top), stash apply (restore without removing), stash push -m "msg" (label it), stash show -p (see diff)' \
+    'git' 'stash,save,restore'
+
+  _ea 'git diff --staged' \
+    'Show changes staged but not yet committed. Without --staged: shows unstaged changes. git diff HEAD: all changes vs last commit. git diff branch1..branch2: compare branches. Add -- file.txt to limit to a specific file.' \
+    'git' 'diff,staged,changes'
+
+  _ea 'git remote -v' \
+    'List remote repositories with fetch/push URLs. remote add name url: add remote. remote set-url origin new-url: change URL. remote prune origin: clean up stale remote-tracking branches.' \
+    'git' 'remote,origin,url'
+
+  _ea 'git cherry-pick <commit-hash>' \
+    'Apply a specific commit from another branch to current branch. -n: apply without committing. --abort to cancel if conflicts. Range: git cherry-pick A..B applies all commits after A up to B.' \
+    'git' 'cherry-pick,apply,commit'
+
+  _ea 'git rebase -i HEAD~3' \
+    'Interactive rebase last 3 commits. Squash, reorder, edit, or drop commits. Commands: pick (keep), squash/s (combine), fixup/f (squash, discard message), drop/d (remove), edit/e (pause to amend). Do not rebase already-pushed commits without force-push.' \
+    'git' 'rebase,interactive,squash,history'
+
+  _ea 'git reset --soft HEAD~1' \
+    'Undo last commit but keep changes staged. --mixed (default): unstage too. --hard: discard everything (destructive). HEAD~2 to go back 2 commits. Recover from mistakes: git reflog then git reset --hard <hash>' \
+    'git' 'reset,undo,commit'
+
+  # ── tmux ───────────────────────────────────────────────────────────────────
+  _ea 'tmux new-session -s name' \
+    'Create new named session. -s sets name. -d creates detached (background). -n names first window. Check if exists in scripts: tmux has-session -t name 2>/dev/null' \
+    'tmux' 'session,create,new'
+
+  _ea 'tmux attach -t name' \
+    'Attach to existing session by name or index. -d detaches other clients first (single-display mode). Attach to most recent: tmux a. List sessions first: tmux ls' \
+    'tmux' 'session,attach,connect'
+
+  _ea 'tmux kill-session -t name' \
+    'Kill a specific session and all its windows/panes. kill-server kills everything. kill-window -t session:1 kills just window 1. Prefix key + & kills current window. Prefix key + x kills current pane.' \
+    'tmux' 'session,kill,close'
+
+  _ea 'tmux list-sessions' \
+    'List all running sessions with window count and time. Shorthand: tmux ls. Shows attached/detached status. Check existence in scripts: tmux has-session -t name 2>/dev/null && echo exists' \
+    'tmux' 'session,list'
+
+  _ea 'tmux split-window -h' \
+    'Split current pane horizontally (left/right panes). -v splits vertically (top/bottom). -p 30 sets new pane to 30% of space. -c /path sets working dir. Prefix + % (horizontal) or " (vertical) also works.' \
+    'tmux' 'pane,split,horizontal'
+
+  _ea 'tmux split-window -v' \
+    'Split current pane vertically (top/bottom panes). Navigate panes: prefix + arrow keys. Resize: prefix + Ctrl+arrow. Zoom pane fullscreen toggle: prefix + z. Swap panes: prefix + { or }.' \
+    'tmux' 'pane,split,vertical'
+
+  _ea 'tmux new-window -n name' \
+    'Create new window in current session. -n names it. -c /path sets working dir. Switch windows: prefix + [0-9] or prefix + n/p (next/prev). Rename current window: prefix + ,' \
+    'tmux' 'window,create,new'
+
+  _ea 'tmux select-layout tiled' \
+    'Arrange all panes in tiled layout. Options: even-horizontal, even-vertical, main-horizontal, main-vertical, tiled. Prefix + Space cycles through layouts. Useful after splitting many panes.' \
+    'tmux' 'pane,layout,tiled,arrange'
+
+  # ── ffprobe ────────────────────────────────────────────────────────────────
+  _ea 'ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 input.mp4' \
+    'Get video dimensions (W,H). -v error suppresses banner. -select_streams v:0 targets first video stream. -of csv=p=0 outputs plain CSV without headers. Output: 1920,1080' \
+    'ffprobe' 'video,dimensions,resolution,width,height'
+
+  _ea 'ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of csv=p=0 input.mp4' \
+    'Get video frame rate. Returns as fraction: 30/1 = 30fps, 30000/1001 ~= 29.97fps. For file duration: ffprobe -v error -show_entries format=duration -of csv=p=0 input.mp4' \
+    'ffprobe' 'video,fps,framerate,duration'
+
+  _ea 'ffprobe -v error -show_format -show_streams -of json input.mp4' \
+    'Show all media metadata as JSON. show_format: duration, bitrate, format, file size. show_streams: codec, resolution, fps, sample_rate per stream. Pipe to jq: ffprobe ... | jq .streams[0].codec_name' \
+    'ffprobe' 'video,metadata,info,inspect'
+
+  # ── ffmpeg ─────────────────────────────────────────────────────────────────
+  _ea 'ffmpeg -i input.mp4 -vn -acodec copy output.aac' \
+    'Extract audio without re-encoding. -vn disables video. -acodec copy streams audio as-is (fast, no quality loss). Output format set by extension (.aac, .mp3, .wav, .opus). Use -ab 192k to transcode to a specific bitrate instead.' \
+    'ffmpeg' 'audio,extract,copy'
+
+  _ea 'ffmpeg -i input.mp4 -an -vcodec copy output.mp4' \
+    'Remove audio track. -an disables audio. -vcodec copy keeps video without re-encoding (fast). Result is a silent video. To replace audio, use the combine command.' \
+    'ffmpeg' 'audio,remove,video,mute'
+
+  _ea 'ffmpeg -i input.mp4 -i audio.aac -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 output.mp4' \
+    'Combine video with new audio. -map 0:v:0 takes video from first input, -map 1:a:0 takes audio from second. -c:v copy avoids re-encoding video (fast). Add -shortest to stop at the shorter stream.' \
+    'ffmpeg' 'audio,video,combine,mux,merge'
+
+  _ea 'ffmpeg -i input.mp4 -vf "crop=640:480:100:50" output.mp4' \
+    'Crop video to region. Format: crop=out_w:out_h:x:y (x,y = top-left corner). Use expressions: crop=iw/2:ih/2:0:0 (top-left quarter). Auto-detect black bars: first run with -vf cropdetect, then use reported values.' \
+    'ffmpeg' 'video,crop,region'
+
+  _ea 'ffmpeg -i input.mp4 -vf "crop=iw/2:ih/2:iw/4:ih/4" output.mp4' \
+    'Crop center 50% of video. iw/ih are input width/height as expressions. iw/4:ih/4 centers the crop (offsets 25% from each edge). For 75%: crop=iw*3/4:ih*3/4:iw/8:ih/8' \
+    'ffmpeg' 'video,crop,proportional,center'
+
+  _ea 'ffmpeg -i input.mp4 -vf "scale=1280:720" output.mp4' \
+    'Resize video. Use -1 for auto dimension (preserves aspect ratio): scale=1280:-1. Use -2 to ensure even dimensions (required by some codecs): scale=1280:-2. Fit in bounds with letterbox: scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2' \
+    'ffmpeg' 'video,resize,scale,resolution'
+
+  _ea 'ffmpeg -i input.mp4 -ss 00:01:00 -to 00:02:00 -c copy output.mp4' \
+    'Trim video by timestamp. -ss start, -to end time. Use -t for duration instead: -t 00:01:00. -c copy skips re-encoding (fast, but cut may be slightly imprecise at keyframe boundaries). Remove -c copy for frame-accurate cuts (slower, re-encodes).' \
+    'ffmpeg' 'video,trim,cut,time'
+
+  _ea 'ffmpeg -i input.mp4 -vf "select=between(n\,100\,200),setpts=N/FRAME_RATE/TB" -af "aselect=between(n\,100\,200),asetpts=N/SR/TB" output.mp4' \
+    'Trim video by frame number (0-indexed). select/aselect filter frames, setpts/asetpts reset timestamps so output starts at 0. For video-only, replace -af part with -an. Get frame numbers first with ffprobe.' \
+    'ffmpeg' 'video,trim,frames,cut'
+
+  _ea 'ffmpeg -i input.mp4 -vf "fps=1" frame_%04d.png' \
+    'Extract video frames as images. fps=1 = 1 frame/sec. fps=0.5 = one every 2 sec. fps=25 = all frames. %04d produces frame_0001.png, frame_0002.png. Extract just the first frame: -vf "select=eq(n\,0)" -vframes 1 first.png' \
+    'ffmpeg' 'video,frames,extract,images,fps'
+
+  _ea 'ffmpeg -i input.mp4 -vf "fps=10,scale=320:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" output.gif' \
+    'Convert video to high-quality GIF with optimized palette. fps=10: frame rate (lower = smaller file). scale=320:-1: resize width to 320. palettegen+paletteuse produces much better colors than simple conversion. Increase scale for larger GIF.' \
+    'ffmpeg' 'video,gif,convert,animation'
+
+  _ea 'ffmpeg -i input.mp4 -c:v libx264 -crf 23 -preset medium -c:a aac -b:a 128k output.mp4' \
+    'Re-encode video with H.264. -crf: quality (0=lossless, 18=visually lossless, 23=default, 51=worst). -preset: ultrafast/fast/medium/slow/veryslow (slower = smaller file, same quality). -b:a: audio bitrate. Use libx265 for H.265/HEVC (better compression).' \
+    'ffmpeg' 'video,encode,compress,h264,crf'
+
+  # ── imagemagick ────────────────────────────────────────────────────────────
+  _ea 'identify -format "%wx%h\n" image.png' \
+    'Get image dimensions (WxH). Format codes: %w=width, %h=height, %z=bit depth, %m=format, %b=file size. Use identify -verbose image.png for all metadata. Works on JPG, PNG, TIFF, WebP, etc.' \
+    'imagemagick' 'image,dimensions,size,info'
+
+  _ea 'convert input.png -crop 100x100+50+50 output.png' \
+    'Crop image to region. Format: WxH+X+Y where X,Y is top-left offset. 100x100 pixel area starting at (50,50). Add +repage after crop to reset virtual canvas. -gravity Center -crop 100x100+0+0 crops from center.' \
+    'imagemagick' 'image,crop,region'
+
+  _ea 'convert input.png -gravity Center -crop 50%x50%+0+0 +repage output.png' \
+    'Crop center 50% of image. -gravity Center positions crop in the middle. 50%x50% takes half width and height. +repage removes virtual canvas offset artifacts. Use -gravity NorthWest for top-left origin.' \
+    'imagemagick' 'image,crop,proportional,center'
+
+  _ea 'convert input.png -resize 800x600 output.png' \
+    'Resize image preserving aspect ratio (fits within 800x600). 800x600! forces exact size (may distort). 800x600> only shrinks if larger. 800x600^ fills bounds (may overflow, pair with -gravity and -extent). 50% to scale by percentage.' \
+    'imagemagick' 'image,resize,scale'
+
+  # ── uv ─────────────────────────────────────────────────────────────────────
+  _ea 'uv venv .venv' \
+    'Create virtual environment in .venv dir. Specify Python version: uv venv --python 3.11. Much faster than python -m venv (written in Rust). Creates .venv/bin/activate and .venv/bin/python.' \
+    'uv' 'venv,virtualenv,python,create'
+
+  _ea 'source .venv/bin/activate' \
+    'Activate virtual environment. fish shell: source .venv/bin/activate.fish. Windows: .venv\Scripts\activate. Deactivate: deactivate. Check active env: which python  or  echo $VIRTUAL_ENV' \
+    'uv' 'venv,activate,python'
+
+  _ea 'uv pip install package' \
+    'Install Python package (much faster than pip, uses parallel downloads). Multiple: uv pip install pkg1 pkg2. From file: uv pip install -r requirements.txt. Editable: uv pip install -e . Skip cache: --no-cache' \
+    'uv' 'pip,install,python,package'
+
+  _ea 'uv pip freeze' \
+    'List installed packages with pinned versions (pip freeze format). Generate requirements: uv pip freeze > requirements.txt. Useful for auditing venv contents.' \
+    'uv' 'pip,freeze,packages,list'
+
+  _ea 'uv pip compile requirements.in -o requirements.txt' \
+    'Resolve and pin all dependencies. Takes loose requirements.in and produces fully pinned requirements.txt. --upgrade to update all. --upgrade-package pkg for one package. --generate-hashes for secure reproducible installs.' \
+    'uv' 'pip,compile,lock,dependencies'
+
+  _ea 'uv run script.py' \
+    'Run Python script with automatic dependency handling. Reads inline script metadata (PEP 723) or pyproject.toml. No manual venv activation needed. Specify Python: uv run --python 3.11 script.py. Run tools: uv run pytest' \
+    'uv' 'run,python,script,execute'
+
+  # ── conda ──────────────────────────────────────────────────────────────────
+  _ea 'conda create -n myenv python=3.11' \
+    'Create new conda environment with specific Python. -n names it. Include packages upfront: conda create -n myenv python=3.11 numpy pandas. -y skips confirmation. --clone existing_env to copy an environment.' \
+    'conda' 'create,environment,python'
+
+  _ea 'conda activate myenv' \
+    'Activate conda environment. Requires conda init (one-time setup). conda activate with no name goes to base. Check current: echo $CONDA_DEFAULT_ENV  or  conda info' \
+    'conda' 'activate,environment'
+
+  _ea 'conda deactivate' \
+    'Deactivate current environment, return to base or system Python. Can be called multiple times if activations were nested.' \
+    'conda' 'deactivate,environment'
+
+  _ea 'conda env list' \
+    'List all conda environments with their paths. Active env marked with *. Shorthand: conda info --envs. Check sizes: du -sh ~/miniconda3/envs/*' \
+    'conda' 'list,environments'
+
+  _ea 'conda install -c conda-forge package' \
+    'Install package from conda-forge (larger, more up-to-date than default channel). Specific version: conda install package=1.2.3. Multiple: conda install pkg1 pkg2. -y skips confirmation. Use mamba instead of conda for much faster dependency solving.' \
+    'conda' 'install,package,conda-forge'
+
+  _ea 'conda env remove -n myenv' \
+    'Delete a conda environment completely. Cannot remove the currently active env (deactivate first). -y skips confirmation. Removes all installed packages in that env. Cannot be undone.' \
+    'conda' 'remove,delete,environment'
+
+  _ea 'conda env export > environment.yml' \
+    'Export environment to YAML for reproducibility. Recreate: conda env create -f environment.yml. --no-builds for cross-platform compatibility. --from-history exports only explicitly installed packages (not auto-installed deps).' \
+    'conda' 'export,environment,yaml,reproduce'
+
+  local total
+  total=$(jq '.entries | length' "$DATA_FILE")
+  echo "✓ initialized with $total example entries"
+  echo "  Try: cmdref list  or  cmdref search ffmpeg"
+}
+
+cmd_help() {
+  cat <<EOF
+cmdref — Command Reference CLI v1.0
+A personal cheatsheet for CLI commands (ffmpeg, git, tmux, linux, etc.).
+Store commands with descriptions and tags, then browse or search interactively.
+
+Usage:
+  cmdref add "command" [-d description] [-c category] [-t tag1,tag2]
+  cmdref add -i                        Interactive mode
+  cmdref search <keyword> [keyword...] Search all fields (alias: s)
+  cmdref list [category]               List entries, filter by category (alias: ls)
+  cmdref show <id>                     Full details for an entry
+  cmdref tag add <id> <tag> [tag...]   Add tag(s) to entry
+  cmdref tag rm  <id> <tag> [tag...]   Remove tag(s) from entry
+  cmdref rm <id>                       Delete entry (with confirmation)
+  cmdref categories                    List categories with counts
+  cmdref edit <id>                     Edit entry in \$EDITOR
+  cmdref export [file]                 Export JSON to stdout or file
+  cmdref import <file>                 Import entries from JSON file
+  cmdref init                          Populate with built-in example entries
+  cmdref help                          Show this help
+
+Examples:
+  cmdref add "git stash" -d "Save changes temporarily" -c git -t stash,save
+  cmdref add -i
+  cmdref search trim video
+  cmdref search ffmpeg audio
+  cmdref list ffmpeg
+  cmdref show 7
+  cmdref tag add 7 lossless
+  cmdref rm 3
+  cmdref categories
+
+Config:
+  CMDREF_DIR   Data directory  (default: /cmdref_data)
+  EDITOR       Editor for edit (default: vi)
+
+Data file: $DATA_FILE
+  You can manually edit this JSON file to add, modify, or delete entries.
+EOF
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dispatch
+# ─────────────────────────────────────────────────────────────────────────────
+
+case "${1:-help}" in
+  add)            shift; cmd_add "$@" ;;
+  search|s)       shift; cmd_search "$@" ;;
+  list|ls)        shift; cmd_list "$@" ;;
+  show)           shift; cmd_show "$@" ;;
+  tag)            shift; cmd_tag "$@" ;;
+  rm|delete)      shift; cmd_rm "$@" ;;
+  categories)     cmd_categories ;;
+  edit)           shift; cmd_edit "$@" ;;
+  export)         shift; cmd_export "$@" ;;
+  import)         shift; cmd_import "$@" ;;
+  init)           cmd_init ;;
+  help|-h|--help) cmd_help ;;
+  *) echo "✗ Unknown command: $1"; echo ""; cmd_help; exit 1 ;;
+esac
