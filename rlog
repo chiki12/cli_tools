@@ -628,8 +628,14 @@ cmd_list() {
 }
 
 cmd_help() {
+    echo "rlog v2 - Research Journal CLI"
+    echo ""
+    echo "  Log directory:  $LOGDIR"
+    echo "  Days:           $DAYDIR"
+    echo "  Envs:           $ENVDIR"
+    echo "  Sessions:       $SESSDIR"
+    echo ""
     cat << 'EOF'
-rlog v2 - Research Journal CLI
 
   rlog run <command...>       Run & log command (auto-detects files)
   rlog exp                    Log experiment interactively
@@ -667,9 +673,6 @@ Limitations - shell state commands:
   Use 'rlog note' to record these manually instead:
     conda activate myenv && rlog note "activated myenv #env"
     rlog env "after activation"   # snapshot the resulting environment
-
-Config:
-  RLOG_DIR=~/research-log     Override log directory
 
 Examples:
   rlog run ffmpeg -i video.mp4 -vn audio.wav
