@@ -812,6 +812,22 @@
       "category": "ffmpeg",
       "tags": [],
       "added": "2026-04-13"
+    },
+    {
+      "id": 67,
+      "command": "ffmpeg -i input.mp4 -filter:v fps=30 -c:a copy output.mp4",
+      "description": "change fps of video. The -c:a copy flag copies the audio stream without re-encoding. To control video codec/quality can also use: \"ffmpeg -i input.mp4 -filter:v fps=24 -c:v libx264 -crf 18 -c:a copy output.mp4\", Where -crf 18 controls quality (lower = better, 18–23 is a good range for H.264).改变帧数",
+      "category": "ffmpeg",
+      "tags": [],
+      "added": "2026-04-15"
+    },
+    {
+      "id": 68,
+      "command": "ffmpeg -i input.mp4 -r 30 -c:v copy -c:a copy output.mp4",
+      "description": "changes playback speed, changes the metadata (the playback rate tag) without touching the actual frames. If the original is 60fps with 600 frames (10 seconds), setting -r 30 still keeps all 600 frames but tells the player to play 30 per second — the video becomes 20 seconds long, like slow motion.",
+      "category": "ffmpeg",
+      "tags": [],
+      "added": "2026-04-15"
     }
   ]
 }
