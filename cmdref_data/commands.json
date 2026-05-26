@@ -828,6 +828,22 @@
       "category": "ffmpeg",
       "tags": [],
       "added": "2026-04-15"
+    },
+    {
+      "id": 69,
+      "command": "git checkout branch",
+      "description": "switch to specific branch",
+      "category": "git",
+      "tags": [],
+      "added": "2026-04-21"
+    },
+    {
+      "id": 70,
+      "command": "ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 input.mp4",
+      "description": "check video's frame size",
+      "category": "ffmpeg",
+      "tags": [],
+      "added": "2026-04-22"
     }
   ]
 }
