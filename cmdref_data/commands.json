@@ -838,6 +838,134 @@
       "added": "2026-04-21"
     },
     {
+      "id": 71,
+      "command": "docker ps",
+      "description": "List running containers. -a shows all (including stopped). -q outputs only IDs (useful for scripting). --format \"table {{.Names}}\\t{{.Status}}\\t{{.Ports}}\" for custom output. docker ps -aq gives all container IDs.",
+      "category": "docker",
+      "tags": ["containers", "list", "status"],
+      "added": "2026-05-26"
+    },
+    {
+      "id": 72,
+      "command": "docker run -it --rm image bash",
+      "description": "Run container interactively and drop into shell. -i keeps stdin open, -t allocates a pseudo-TTY. --rm auto-removes container on exit (no cleanup needed). Replace bash with sh for Alpine-based images. Add -v $(pwd):/app to mount current dir.",
+      "category": "docker",
+      "tags": ["run", "interactive", "shell"],
+      "added": "2026-05-26"
+    },
+    {
+      "id": 73,
+      "command": "docker run -d -p 8080:80 --name myapp image",
+      "description": "Run container detached in background. -d detaches. -p host:container maps ports. --name assigns a name for easier reference. Add --restart unless-stopped to auto-restart on reboot. Check it started: docker ps or docker logs myapp.",
+      "category": "docker",
+      "tags": ["run", "detached", "ports"],
+      "added": "2026-05-26"
+    },
+    {
+      "id": 74,
+      "command": "docker exec -it container bash",
+      "description": "Open shell inside a running container. -it for interactive terminal. Use sh if bash isn't available. Run a one-off command without shell: docker exec container cat /etc/hosts. As root: docker exec -u root -it container bash.",
+      "category": "docker",
+      "tags": ["exec", "shell", "inspect"],
+      "added": "2026-05-26"
+    },
+    {
+      "id": 75,
+      "command": "docker build -t name:tag .",
+      "description": "Build image from Dockerfile in current dir. -t sets name and optional tag (default: latest). -f to specify alternate Dockerfile path. --no-cache to force fresh build. --build-arg KEY=VAL passes build-time variables. . is the build context (sent to daemon).",
+      "category": "docker",
+      "tags": ["build", "image", "dockerfile"],
+      "added": "2026-05-26"
+    },
+    {
+      "id": 76,
+      "command": "docker images",
+      "description": "List local images with name, tag, ID, and size. -a shows intermediate layers. --filter dangling=true lists untagged images. docker image inspect name for full metadata. docker images --format \"{{.Repository}}:{{.Tag}}\" for just name:tag.",
+      "category": "docker",
+      "tags": ["images", "list"],
+      "added": "2026-05-26"
+    },
+    {
+      "id": 77,
+      "command": "docker pull image:tag",
+      "description": "Download image from registry (Docker Hub by default). Specify tag or defaults to latest. Full path for other registries: docker pull ghcr.io/user/repo:tag. docker pull --all-tags image fetches every tag. Check digest: docker inspect image --format='{{.RepoDigests}}'.",
+      "category": "docker",
+      "tags": ["pull", "image", "registry"],
+      "added": "2026-05-26"
+    },
+    {
+      "id": 78,
+      "command": "docker stop container && docker rm container",
+      "description": "Stop then remove a container. stop sends SIGTERM (graceful). kill sends SIGKILL (immediate). rm removes stopped container. Combine: docker rm -f container (force-removes even if running). Remove all stopped: docker container prune.",
+      "category": "docker",
+      "tags": ["stop", "remove", "cleanup"],
+      "added": "2026-05-26"
+    },
+    {
+      "id": 79,
+      "command": "docker rmi image",
+      "description": "Remove a local image. Must stop/remove containers using it first. -f forces removal. Remove all dangling (untagged) images: docker image prune. Remove all unused images: docker image prune -a. List before removing: docker images -f dangling=true.",
+      "category": "docker",
+      "tags": ["remove", "image", "cleanup"],
+      "added": "2026-05-26"
+    },
+    {
+      "id": 80,
+      "command": "docker logs -f container",
+      "description": "Stream container logs. -f follows (like tail -f). --tail 100 shows last 100 lines. --since 10m for last 10 minutes. --timestamps adds timestamps. Logs go to stdout/stderr inside container — check docker inspect for log driver (default: json-file).",
+      "category": "docker",
+      "tags": ["logs", "debug", "monitor"],
+      "added": "2026-05-26"
+    },
+    {
+      "id": 81,
+      "command": "docker cp container:/path/to/file ./local/",
+      "description": "Copy files between container and host. Reverse for host→container: docker cp ./local/file container:/path/. Works on stopped containers too. Useful for extracting build artifacts or config files without mounting a volume.",
+      "category": "docker",
+      "tags": ["copy", "files", "transfer"],
+      "added": "2026-05-26"
+    },
+    {
+      "id": 82,
+      "command": "docker volume ls",
+      "description": "List all named volumes. docker volume inspect name for details (mountpoint, labels). docker volume create name to pre-create. docker volume prune removes unused volumes. Mount in run: -v myvolume:/app/data or -v $(pwd):/app for bind mount.",
+      "category": "docker",
+      "tags": ["volume", "storage", "list"],
+      "added": "2026-05-26"
+    },
+    {
+      "id": 83,
+      "command": "docker system prune -a",
+      "description": "Remove all unused containers, images, networks, and build cache. -a removes all unused images (not just dangling). --volumes also removes unused volumes. Shows space reclaimed. Without -a only removes dangling images. Always run docker system df first to see what's taking space.",
+      "category": "docker",
+      "tags": ["prune", "cleanup", "disk"],
+      "added": "2026-05-26"
+    },
+    {
+      "id": 84,
+      "command": "docker compose up -d",
+      "description": "Start all services from docker-compose.yml detached. --build forces image rebuild before starting. Specific service: docker compose up -d service_name. docker compose down stops and removes containers+networks. down -v also removes volumes.",
+      "category": "docker",
+      "tags": ["compose", "services", "start"],
+      "added": "2026-05-26"
+    },
+    {
+      "id": 85,
+      "command": "docker compose logs -f service",
+      "description": "Follow logs for a specific compose service. Omit service name to tail all services. --tail=50 limits output. docker compose ps shows status of all services. docker compose restart service to restart one service without touching others.",
+      "category": "docker",
+      "tags": ["compose", "logs", "monitor"],
+      "added": "2026-05-26"
+    },
+    {
+      "id": 86,
+      "command": "docker inspect container",
+      "description": "Show full JSON metadata for a container or image. --format to extract specific fields: docker inspect --format='{{.NetworkSettings.IPAddress}}' container. Works on images, volumes, and networks too. Useful for debugging mounts, env vars, and network config.",
+      "category": "docker",
+      "tags": ["inspect", "metadata", "debug"],
+      "added": "2026-05-26"
+    },
+    {
       "id": 70,
       "command": "ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 input.mp4",
       "description": "check video's frame size",
